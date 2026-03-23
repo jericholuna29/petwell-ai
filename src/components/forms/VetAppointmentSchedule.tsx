@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import AppointmentMessageThread from '@/components/forms/AppointmentMessageThread';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -232,6 +233,12 @@ export default function VetAppointmentSchedule() {
                           )}
                         </div>
                       </div>
+
+                      <AppointmentMessageThread
+                        appointmentId={appointment.id}
+                        currentUserId={vetId}
+                        canMessage={appointment.status === 'confirmed' || appointment.status === 'completed'}
+                      />
                     </div>
                   );
                 })}

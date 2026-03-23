@@ -85,6 +85,31 @@ CREATE TABLE IF NOT EXISTS consultations (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+-- Create appointment messages table for pet owner and vet communication
+CREATE TABLE IF NOT EXISTS appointment_messages (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  appointment_id UUID REFERENCES appointments(id) ON DELETE CASCADE NOT NULL,
+  sender_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  message TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
+  CONSTRAINT appointment_messages_non_empty_message CHECK (LENGTH(TRIM(message)) > 0)
+);
+
+-- Create notifications table for in-app alerts
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  recipient_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+  appointment_id UUID REFERENCES appointments(id) ON DELETE CASCADE,
+  message_id UUID REFERENCES appointment_messages(id) ON DELETE CASCADE,
+  notification_type TEXT CHECK (
+    notification_type IN ('new_message', 'appointment_request', 'appointment_update')
+  ) NOT NULL DEFAULT 'new_message',
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_pets_owner_id ON pets(owner_id);
 CREATE INDEX IF NOT EXISTS idx_appointments_pet_owner_id ON appointments(pet_owner_id);
@@ -93,6 +118,11 @@ CREATE INDEX IF NOT EXISTS idx_appointments_date ON appointments(appointment_dat
 CREATE INDEX IF NOT EXISTS idx_consultations_appointment_id ON consultations(appointment_id);
 CREATE INDEX IF NOT EXISTS idx_consultations_pet_owner_id ON consultations(pet_owner_id);
 CREATE INDEX IF NOT EXISTS idx_consultations_vet_id ON consultations(vet_id);
+CREATE INDEX IF NOT EXISTS idx_appointment_messages_appointment_id
+  ON appointment_messages(appointment_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_appointment_messages_sender_id ON appointment_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_id
+  ON notifications(recipient_id, is_read, created_at DESC);
 
 -- Enable Row Level Security
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
@@ -100,6 +130,8 @@ ALTER TABLE pets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE vets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE appointments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE consultations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE appointment_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies
 
@@ -206,6 +238,46 @@ DROP POLICY IF EXISTS "Vets can update consultations" ON consultations;
 CREATE POLICY "Vets can update consultations" ON consultations
   FOR UPDATE USING (auth.uid() = vet_id);
 
+-- Appointment messages: Vet and pet owner can chat after appointment approval
+DROP POLICY IF EXISTS "Participants can view appointment messages" ON appointment_messages;
+CREATE POLICY "Participants can view appointment messages" ON appointment_messages
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1
+      FROM appointments
+      WHERE appointments.id = appointment_messages.appointment_id
+        AND (
+          appointments.pet_owner_id = auth.uid()
+          OR appointments.vet_id = auth.uid()
+        )
+    )
+  );
+
+DROP POLICY IF EXISTS "Participants can insert appointment messages" ON appointment_messages;
+CREATE POLICY "Participants can insert appointment messages" ON appointment_messages
+  FOR INSERT WITH CHECK (
+    sender_id = auth.uid()
+    AND EXISTS (
+      SELECT 1
+      FROM appointments
+      WHERE appointments.id = appointment_messages.appointment_id
+        AND appointments.status IN ('confirmed', 'completed')
+        AND (
+          appointments.pet_owner_id = auth.uid()
+          OR appointments.vet_id = auth.uid()
+        )
+    )
+  );
+
+-- Notifications: users can only access and update their own notifications
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
+CREATE POLICY "Users can view own notifications" ON notifications
+  FOR SELECT USING (auth.uid() = recipient_id);
+
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
+CREATE POLICY "Users can update own notifications" ON notifications
+  FOR UPDATE USING (auth.uid() = recipient_id);
+
 -- Function to handle user profile creation on signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -277,6 +349,122 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function to create cross-user notification when appointment message is sent
+CREATE OR REPLACE FUNCTION public.notify_on_appointment_message()
+RETURNS TRIGGER AS $$
+DECLARE
+  appointment_owner UUID;
+  appointment_vet UUID;
+  recipient UUID;
+BEGIN
+  SELECT pet_owner_id, vet_id
+  INTO appointment_owner, appointment_vet
+  FROM appointments
+  WHERE id = NEW.appointment_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW;
+  END IF;
+
+  recipient := CASE
+    WHEN NEW.sender_id = appointment_owner THEN appointment_vet
+    WHEN NEW.sender_id = appointment_vet THEN appointment_owner
+    ELSE NULL
+  END;
+
+  IF recipient IS NULL OR recipient = NEW.sender_id THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO notifications (
+    recipient_id,
+    appointment_id,
+    message_id,
+    notification_type,
+    title,
+    body,
+    is_read
+  )
+  VALUES (
+    recipient,
+    NEW.appointment_id,
+    NEW.id,
+    'new_message',
+    'New appointment message',
+    CASE
+      WHEN LENGTH(NEW.message) > 140 THEN LEFT(NEW.message, 140) || '...'
+      ELSE NEW.message
+    END,
+    FALSE
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Function to notify assigned vet when a new appointment request is created
+CREATE OR REPLACE FUNCTION public.notify_on_appointment_created()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO notifications (
+    recipient_id,
+    appointment_id,
+    notification_type,
+    title,
+    body,
+    is_read
+  )
+  VALUES (
+    NEW.vet_id,
+    NEW.id,
+    'appointment_request',
+    'New appointment request',
+    'A pet owner submitted a new appointment request.',
+    FALSE
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- Function to notify pet owner when vet updates appointment status
+CREATE OR REPLACE FUNCTION public.notify_on_appointment_updated()
+RETURNS TRIGGER AS $$
+DECLARE
+  status_text TEXT;
+BEGIN
+  IF OLD.status IS NOT DISTINCT FROM NEW.status THEN
+    RETURN NEW;
+  END IF;
+
+  status_text := CASE NEW.status
+    WHEN 'confirmed' THEN 'approved'
+    WHEN 'cancelled' THEN 'declined'
+    WHEN 'completed' THEN 'completed'
+    ELSE NEW.status
+  END;
+
+  INSERT INTO notifications (
+    recipient_id,
+    appointment_id,
+    notification_type,
+    title,
+    body,
+    is_read
+  )
+  VALUES (
+    NEW.pet_owner_id,
+    NEW.id,
+    'appointment_update',
+    'Appointment status updated',
+    'Your appointment was ' || status_text || ' by the veterinary clinic.',
+    FALSE
+  );
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- Add triggers for updated_at
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
@@ -293,3 +481,18 @@ CREATE TRIGGER update_appointments_updated_at BEFORE UPDATE ON appointments
 DROP TRIGGER IF EXISTS update_consultations_updated_at ON consultations;
 CREATE TRIGGER update_consultations_updated_at BEFORE UPDATE ON consultations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trigger_notify_on_appointment_message ON appointment_messages;
+CREATE TRIGGER trigger_notify_on_appointment_message
+  AFTER INSERT ON appointment_messages
+  FOR EACH ROW EXECUTE FUNCTION public.notify_on_appointment_message();
+
+DROP TRIGGER IF EXISTS trigger_notify_on_appointment_created ON appointments;
+CREATE TRIGGER trigger_notify_on_appointment_created
+  AFTER INSERT ON appointments
+  FOR EACH ROW EXECUTE FUNCTION public.notify_on_appointment_created();
+
+DROP TRIGGER IF EXISTS trigger_notify_on_appointment_updated ON appointments;
+CREATE TRIGGER trigger_notify_on_appointment_updated
+  AFTER UPDATE ON appointments
+  FOR EACH ROW EXECUTE FUNCTION public.notify_on_appointment_updated();

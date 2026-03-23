@@ -51,6 +51,26 @@ export interface Appointment {
   created_at: string;
 }
 
+export interface AppointmentMessage {
+  id: string;
+  appointment_id: string;
+  sender_id: string;
+  message: string;
+  created_at: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  recipient_id: string;
+  appointment_id?: string;
+  message_id?: string;
+  notification_type: 'new_message' | 'appointment_request' | 'appointment_update';
+  title: string;
+  body: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface VetProfile extends User {
   specializations?: string[];
   experience_years?: number;

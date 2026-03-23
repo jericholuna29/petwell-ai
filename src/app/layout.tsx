@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Petwell AI - Professional Pet Care",
   description: "Connect with veterinarians and get AI-powered pet health insights",
+  icons: {
+    icon: "/Petwellai.svg",
+    shortcut: "/Petwellai.svg",
+  },
 };
 
 export default function RootLayout({

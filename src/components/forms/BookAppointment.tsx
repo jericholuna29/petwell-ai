@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import AppointmentMessageThread from '@/components/forms/AppointmentMessageThread';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -459,6 +460,12 @@ export default function BookAppointment() {
                       {statusLabel}
                     </span>
                   </div>
+
+                  <AppointmentMessageThread
+                    appointmentId={appointment.id}
+                    currentUserId={userId}
+                    canMessage={appointment.status === 'confirmed' || appointment.status === 'completed'}
+                  />
                 </div>
               );
             })}
