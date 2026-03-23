@@ -208,13 +208,17 @@ export default function PetOwnerProfile() {
       .filter((pet) => pet.name || pet.type || pet.age);
 
     for (const pet of trimmedPets) {
-      const parsedAge = pet.age ? Number(pet.age) : null;
+     const parsedAge = pet.age ? Number(pet.age) : null;
 
-      if (pet.age && (Number.isNaN(parsedAge) || parsedAge < 0)) {
-        toast.error('Pet age must be a valid non-negative number');
-        setSaving(false);
-        return;
-      }
+if (
+  pet.age &&
+  parsedAge !== null &&
+  (Number.isNaN(parsedAge) || parsedAge < 0)
+) {
+  toast.error('Pet age must be a valid non-negative number');
+  setSaving(false);
+  return;
+}
 
       if (!pet.name) {
         toast.error('Each pet must have a name');
