@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffdbfd;
+  --foreground: #24274a;
+  --theme-100: #ffdbfd;
+  --theme-200: #c9beff;
+  --theme-500: #8494ff;
+  --theme-700: #6367ff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #ffdbfd;
+    --foreground: #24274a;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), 'Segoe UI', sans-serif;
+  line-height: 1.5;
+}
+
+@layer components {
+  .pw-surface {
+    @apply bg-white/85 backdrop-blur-sm border border-[#C9BEFF]/70 rounded-2xl shadow-[0_12px_30px_rgba(99,103,255,0.12)] transition-all duration-200;
+  }
+
+  .pw-heading {
+    @apply text-[#24274A] font-bold tracking-tight;
+  }
+
+  .pw-subtext {
+    @apply text-[#24274A]/75;
+  }
+
+  .pw-chip {
+    @apply inline-flex rounded-full px-3 py-1 text-xs font-semibold bg-[#FFDBFD] text-[#6367FF];
+  }
+
+  .pw-stat-number {
+    @apply text-3xl font-black text-[#6367FF];
+  }
+
+  .pw-section-card {
+    @apply rounded-xl border border-[#C9BEFF]/80 bg-white/70 p-4 transition-all duration-200 hover:shadow-[0_10px_20px_rgba(99,103,255,0.10)] hover:border-[#8494FF]/60;
+  }
+
+  .pw-nav-link {
+    @apply text-[#24274A]/80 hover:text-[#6367FF] font-medium transition-colors duration-200;
+  }
+
+  .pw-mobile-link {
+    @apply rounded-lg bg-[#FFDBFD] px-3 py-2 text-center text-[#24274A] hover:bg-[#C9BEFF] transition-colors duration-200;
+  }
+
+  .pw-muted-card {
+    @apply rounded-xl border border-[#C9BEFF]/70 bg-white/70;
+  }
+
+  .pw-interactive {
+    @apply transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_10px_22px_rgba(99,103,255,0.14)];
+  }
+}
+
+.neon-bg-grid {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 219, 253, 0.7) 0, rgba(255, 219, 253, 0) 45%),
+    radial-gradient(circle at 88% 24%, rgba(99, 103, 255, 0.22) 0, rgba(99, 103, 255, 0) 42%),
+    radial-gradient(circle at 48% 80%, rgba(132, 148, 255, 0.2) 0, rgba(132, 148, 255, 0) 50%),
+    linear-gradient(135deg, #ffdbfd 0%, #c9beff 50%, #8494ff 100%);
+}
+
+.neon-particles {
+  background-image:
+    radial-gradient(circle at 9% 25%, rgba(99, 103, 255, 0.85) 0 2px, transparent 3px),
+    radial-gradient(circle at 80% 16%, rgba(132, 148, 255, 0.85) 0 2px, transparent 3px),
+    radial-gradient(circle at 66% 72%, rgba(201, 190, 255, 0.9) 0 2px, transparent 3px),
+    radial-gradient(circle at 30% 84%, rgba(99, 103, 255, 0.85) 0 1.6px, transparent 3px),
+    radial-gradient(circle at 92% 60%, rgba(201, 190, 255, 0.8) 0 2px, transparent 3px);
+  animation: pulseParticles 9s ease-in-out infinite alternate;
+}
+
+.neon-panel {
+  border: 1px solid rgba(132, 148, 255, 0.45);
+  background: linear-gradient(180deg, rgba(255, 219, 253, 0.86) 0%, rgba(201, 190, 255, 0.72) 100%);
+  box-shadow:
+    0 20px 50px rgba(99, 103, 255, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(10px);
+}
+
+.neon-card {
+  border: 1px solid rgba(132, 148, 255, 0.25);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.2));
+  backdrop-filter: blur(14px);
+}
+
+.neon-input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #24274a;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding: 0.65rem 0.9rem;
+  outline: none;
+  transition: box-shadow 180ms ease;
+}
+
+.neon-input:focus {
+  box-shadow: 0 0 0 2px rgba(132, 148, 255, 0.6);
+}
+
+@keyframes pulseParticles {
+  0% {
+    opacity: 0.55;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0.9;
+    transform: translateY(-6px);
+  }
+}
