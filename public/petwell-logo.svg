@@ -1,0 +1,20 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pw-ring" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7A5AF8"/>
+      <stop offset="1" stop-color="#D881FF"/>
+    </linearGradient>
+    <linearGradient id="pw-fill" x1="130" y1="146" x2="384" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A16BFF"/>
+      <stop offset="1" stop-color="#7A5AF8"/>
+    </linearGradient>
+  </defs>
+
+  <circle cx="256" cy="230" r="170" stroke="url(#pw-ring)" stroke-width="20"/>
+
+  <path d="M171 324C155 310 145 287 145 262C145 219 178 185 221 182C244 161 274 151 305 153C344 155 378 183 389 221C424 237 443 276 437 313C430 355 394 386 352 386H236C210 386 186 375 171 357V324Z" fill="url(#pw-fill)"/>
+
+  <path d="M214 211C203 197 201 179 210 165C220 150 238 144 255 150C266 132 284 121 304 121C329 121 351 139 358 163C378 165 395 179 401 198C408 220 399 245 380 255" stroke="#0B144A" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+
+  <text x="256" y="468" text-anchor="middle" fill="url(#pw-ring)" font-family="Georgia, 'Times New Roman', serif" font-weight="700" font-size="58" letter-spacing="2">PETWELL.AI</text>
+</svg>

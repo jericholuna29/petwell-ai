@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import { AIResponse } from '@/types';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -45,6 +44,18 @@ interface RecommendedVet {
   experienceYears: string;
 }
 
+interface ConsultationHistoryEntry {
+  id: string;
+  createdAt: string;
+  petName: string;
+  petType: 'dog' | 'cat';
+  petAge: number;
+  symptoms: string;
+  result: ConsultationResponse;
+}
+
+const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
+
 export default function ConsultationForm() {
   const router = useRouter();
   const [petName, setPetName] = useState('');
@@ -57,6 +68,36 @@ export default function ConsultationForm() {
   const [loadingVets, setLoadingVets] = useState(false);
   const [selectedMapVetId, setSelectedMapVetId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
+
+  useEffect(() => {
+    try {
+      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
+      if (!rawHistory) return;
+
+      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+
+      setConsultationHistory(parsed);
+
+      const latest = parsed[0];
+      setPetName(latest.petName);
+      setPetType(latest.petType);
+      setPetAge(String(latest.petAge));
+      setSymptoms(latest.symptoms);
+      setResult(latest.result);
+    } catch {
+      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!result || result.severity === 'low' || recommendedVets.length > 0 || loadingVets) {
+      return;
+    }
+
+    loadRecommendedVets();
+  }, [result, recommendedVets.length, loadingVets]);
 
   const loadRecommendedVets = async () => {
     setLoadingVets(true);
@@ -131,6 +172,29 @@ export default function ConsultationForm() {
     return Object.keys(newErrors).length === 0;
   };
 
+  const persistHistory = (nextHistory: ConsultationHistoryEntry[]) => {
+    setConsultationHistory(nextHistory);
+    window.localStorage.setItem(CONSULTATION_HISTORY_KEY, JSON.stringify(nextHistory));
+  };
+
+  const loadHistoryEntry = (entry: ConsultationHistoryEntry) => {
+    setPetName(entry.petName);
+    setPetType(entry.petType);
+    setPetAge(String(entry.petAge));
+    setSymptoms(entry.symptoms);
+    setResult(entry.result);
+    setSelectedMapVetId(null);
+    setErrors({});
+  };
+
+  const clearHistory = () => {
+    setConsultationHistory([]);
+    setResult(null);
+    setSelectedMapVetId(null);
+    window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
+    toast.success('Consultation history cleared.');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -160,9 +224,25 @@ export default function ConsultationForm() {
       const data = await response.json();
       setResult(data);
       await loadRecommendedVets();
+
+      const nextHistory: ConsultationHistoryEntry[] = [
+        {
+          id: `${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          petName: petName.trim(),
+          petType,
+          petAge: parsedPetAge,
+          symptoms: normalizedSymptoms,
+          result: data,
+        },
+        ...consultationHistory,
+      ].slice(0, 20);
+
+      persistHistory(nextHistory);
       toast.success('Consultation analysis complete!');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to get consultation');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to get consultation';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -260,6 +340,39 @@ export default function ConsultationForm() {
           </Button>
         </form>
       </Card>
+
+      {consultationHistory.length > 0 && (
+        <Card className="mb-6 border border-[#C9BEFF]">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-bold text-[#191D3A]">Previous Consultations</h3>
+              <p className="text-sm text-[#24274A]/75">Your recent AI consultation results are saved on this device.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={clearHistory}>
+              Clear History
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {consultationHistory.map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => loadHistoryEntry(entry)}
+                className="w-full rounded-lg border border-[#C9BEFF] bg-white/70 px-4 py-3 text-left transition hover:border-[#8494FF]"
+              >
+                <p className="font-semibold text-[#191D3A]">
+                  {entry.petName} ({entry.petType.toUpperCase()})
+                </p>
+                <p className="text-sm text-[#32375D]">
+                  {new Date(entry.createdAt).toLocaleString()} • Severity: {entry.result.severity.toUpperCase()}
+                </p>
+                <p className="mt-1 line-clamp-2 text-sm text-[#24274A]/80">Symptoms: {entry.symptoms}</p>
+              </button>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {result && (
         <Card className={`border-2 ${severity_colors[result.severity]}`}>
