@@ -1,11 +1,15 @@
 import { OpenAI } from 'openai';
 import { AIResponse } from '@/types';
 
-const apiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+function getOpenAIClient(): OpenAI {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY;
 
-const openai = new OpenAI({
-  apiKey,
-});
+  if (!apiKey) {
+    throw new Error('Missing OpenAI API key. Set OPENAI_API_KEY on the server.');
+  }
+
+  return new OpenAI({ apiKey });
+}
 
 function parseAIResponse(raw: string): AIResponse {
   const normalized = raw.trim();
@@ -36,9 +40,7 @@ export async function getAIPetHealthAnalysis(
   symptoms: string
 ): Promise<AIResponse> {
   try {
-    if (!apiKey) {
-      throw new Error('Missing OpenAI API key. Set OPENAI_API_KEY on the server.');
-    }
+    const openai = getOpenAIClient();
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
