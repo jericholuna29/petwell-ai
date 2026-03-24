@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAIPetHealthAnalysis } from '@/lib/openai';
 
 export async function POST(request: NextRequest) {
   try {
+    const { getAIPetHealthAnalysis } = await import('@/lib/openai');
     const { petType, petAge, symptoms } = await request.json();
     const normalizedPetType = typeof petType === 'string' ? petType.trim().toLowerCase() : '';
     const normalizedSymptoms = typeof symptoms === 'string' ? symptoms.trim() : '';
