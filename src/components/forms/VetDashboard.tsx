@@ -118,14 +118,22 @@ export default function VetDashboard() {
 
     setUpdatingId(appointmentId);
 
-    const { error } = await supabase
+    const { data: updatedRow, error } = await supabase
       .from('appointments')
       .update({ status: nextStatus })
       .eq('id', appointmentId)
-      .eq('vet_id', vetId);
+      .select('id, status')
+      .maybeSingle();
 
     if (error) {
-      toast.error(error.message || 'Failed to update appointment status');
+      const errorParts = [error.message, error.details, error.hint, error.code].filter(Boolean);
+      toast.error(errorParts.join(' | ') || 'Failed to update appointment status');
+      setUpdatingId(null);
+      return;
+    }
+
+    if (!updatedRow) {
+      toast.error('Appointment not found or you are not allowed to update it.');
       setUpdatingId(null);
       return;
     }
