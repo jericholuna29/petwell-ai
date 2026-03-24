@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -54,11 +55,37 @@ interface ConsultationHistoryEntry {
   result: ConsultationResponse;
 }
 
+interface PetOption {
+  id: string;
+  name: string;
+  species: string;
+  age: number | null;
+}
+
+interface ConsultationBookingPrefill {
+  from: 'consultation';
+  createdAt: string;
+  vetId: string;
+  vetName: string;
+  petId: string;
+  petName: string;
+  petType: 'dog' | 'cat';
+  petAge: number;
+  symptoms: string;
+  severity: 'low' | 'medium' | 'high';
+  possibleIllnesses: string[];
+  recommendations: string[];
+}
+
 const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
+const CONSULTATION_BOOKING_PREFILL_KEY = 'petwell_consultation_booking_prefill_v1';
 
 export default function ConsultationForm() {
   const router = useRouter();
   const [petName, setPetName] = useState('');
+  const [selectedPetId, setSelectedPetId] = useState('');
+  const [petOptions, setPetOptions] = useState<PetOption[]>([]);
+  const [loadingPets, setLoadingPets] = useState(false);
   const [petType, setPetType] = useState<'dog' | 'cat'>('dog');
   const [petAge, setPetAge] = useState('');
   const [symptoms, setSymptoms] = useState('');
@@ -66,9 +93,94 @@ export default function ConsultationForm() {
   const [result, setResult] = useState<ConsultationResponse | null>(null);
   const [recommendedVets, setRecommendedVets] = useState<RecommendedVet[]>([]);
   const [loadingVets, setLoadingVets] = useState(false);
-  const [selectedMapVetId, setSelectedMapVetId] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
+
+  const saveBookingPrefill = (vet: RecommendedVet) => {
+    if (!result) {
+      return;
+    }
+
+    if (!selectedPetId) {
+      return;
+    }
+
+    const parsedPetAge = Number(petAge);
+    const payload: ConsultationBookingPrefill = {
+      from: 'consultation',
+      createdAt: new Date().toISOString(),
+      vetId: vet.id,
+      vetName: vet.name,
+      petId: selectedPetId,
+      petName: petName.trim(),
+      petType,
+      petAge: Number.isFinite(parsedPetAge) ? parsedPetAge : 0,
+      symptoms: symptoms.trim(),
+      severity: result.severity,
+      possibleIllnesses: result.possible_illnesses,
+      recommendations: result.recommendations,
+    };
+
+    window.localStorage.setItem(CONSULTATION_BOOKING_PREFILL_KEY, JSON.stringify(payload));
+  };
+
+  useEffect(() => {
+    const loadPets = async () => {
+      setLoadingPets(true);
+
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        setLoadingPets(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('pets')
+        .select('id, name, species, age')
+        .eq('owner_id', authData.user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        toast.error(error.message || 'Failed to load pets for consultation');
+        setPetOptions([]);
+        setLoadingPets(false);
+        return;
+      }
+
+      const rows = (data || []) as PetOption[];
+      setPetOptions(rows);
+
+      if (!selectedPetId && rows.length > 0) {
+        setSelectedPetId(rows[0].id);
+      }
+
+      setLoadingPets(false);
+    };
+
+    void loadPets();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedPetId) {
+      return;
+    }
+
+    const selectedPet = petOptions.find((pet) => pet.id === selectedPetId);
+    if (!selectedPet) {
+      return;
+    }
+
+    setPetName(selectedPet.name);
+
+    const normalizedSpecies = selectedPet.species.trim().toLowerCase();
+    if (normalizedSpecies === 'dog' || normalizedSpecies === 'cat') {
+      setPetType(normalizedSpecies);
+    }
+
+    if (selectedPet.age !== null && selectedPet.age !== undefined) {
+      setPetAge(String(selectedPet.age));
+    }
+  }, [selectedPetId, petOptions]);
 
   useEffect(() => {
     try {
@@ -165,7 +277,7 @@ export default function ConsultationForm() {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    if (!petName) newErrors.petName = 'Pet name is required';
+    if (!selectedPetId) newErrors.petName = 'Please select your pet';
     if (!petAge) newErrors.petAge = 'Pet age is required';
     if (!symptoms) newErrors.symptoms = 'Symptoms are required';
     setErrors(newErrors);
@@ -183,14 +295,12 @@ export default function ConsultationForm() {
     setPetAge(String(entry.petAge));
     setSymptoms(entry.symptoms);
     setResult(entry.result);
-    setSelectedMapVetId(null);
     setErrors({});
   };
 
   const clearHistory = () => {
     setConsultationHistory([]);
     setResult(null);
-    setSelectedMapVetId(null);
     window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
     toast.success('Consultation history cleared.');
   };
@@ -201,7 +311,6 @@ export default function ConsultationForm() {
     if (!validateForm()) return;
 
     setLoading(true);
-    setSelectedMapVetId(null);
     try {
       const normalizedSymptoms = symptoms.trim();
       const parsedPetAge = Number(petAge);
@@ -236,7 +345,7 @@ export default function ConsultationForm() {
           result: data,
         },
         ...consultationHistory,
-      ].slice(0, 20);
+      ];
 
       persistHistory(nextHistory);
       toast.success('Consultation analysis complete!');
@@ -277,14 +386,37 @@ export default function ConsultationForm() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <Input
-            label="Pet Name"
-            type="text"
-            value={petName}
-            onChange={(e) => setPetName(e.target.value)}
-            error={errors.petName}
-            placeholder="Enter your pet's name"
-          />
+          <div>
+            <label className="block text-sm font-medium text-[#32375D] mb-2">
+              Select Pet
+            </label>
+            <select
+              value={selectedPetId}
+              onChange={(e) => setSelectedPetId(e.target.value)}
+              className="w-full px-4 py-2 border border-[#C9BEFF] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8494FF]"
+              disabled={loadingPets || petOptions.length === 0}
+            >
+              <option value="">Select your pet</option>
+              {petOptions.map((pet) => (
+                <option key={pet.id} value={pet.id}>
+                  {pet.name} ({pet.species})
+                </option>
+              ))}
+            </select>
+            {errors.petName && (
+              <p className="text-[#6367FF] text-sm mt-1">{errors.petName}</p>
+            )}
+
+            {petOptions.length === 0 && !loadingPets && (
+              <p className="text-sm text-[#32375D] mt-2">
+                No pets found.{' '}
+                <Link href="/pets/add" className="font-semibold text-[#6367FF] hover:underline">
+                  Add a pet first
+                </Link>
+                .
+              </p>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-[#32375D] mb-2">
@@ -358,7 +490,11 @@ export default function ConsultationForm() {
               <button
                 key={entry.id}
                 type="button"
-                onClick={() => loadHistoryEntry(entry)}
+                onClick={() =>
+                  router.push(
+                    `/profile?section=recent-consultations&consultationId=${encodeURIComponent(entry.id)}`
+                  )
+                }
                 className="w-full rounded-lg border border-[#C9BEFF] bg-white/70 px-4 py-3 text-left transition hover:border-[#8494FF]"
               >
                 <p className="font-semibold text-[#191D3A]">
@@ -368,6 +504,7 @@ export default function ConsultationForm() {
                   {new Date(entry.createdAt).toLocaleString()} • Severity: {entry.result.severity.toUpperCase()}
                 </p>
                 <p className="mt-1 line-clamp-2 text-sm text-[#24274A]/80">Symptoms: {entry.symptoms}</p>
+                <p className="mt-2 text-xs font-semibold text-[#6367FF]">Open in Profile Recent Consultations</p>
               </button>
             ))}
           </div>
@@ -450,7 +587,7 @@ export default function ConsultationForm() {
                 <div className="mt-4 rounded-xl border border-[#C9BEFF] bg-white/70 p-4">
                   <h4 className="text-lg font-semibold text-[#191D3A] mb-1">Recommended Veterinarian Contacts</h4>
                   <p className="text-sm pw-subtext mb-4">
-                    Based on available registered vet clinics. Use contact info and map for follow-up care.
+                    Based on available registered vet clinics. Use contact info to call or send a message for follow-up care.
                   </p>
 
                   {loadingVets ? (
@@ -460,8 +597,6 @@ export default function ConsultationForm() {
                   ) : (
                     <div className="space-y-3">
                       {recommendedVets.map((vet) => {
-                        const mapQuery = vet.clinicAddress !== 'Location not provided' ? vet.clinicAddress : vet.address;
-
                         return (
                           <div key={vet.id} className="rounded-lg border border-[#C9BEFF] bg-[#FFDBFD]/35 p-3">
                             <p className="font-semibold text-[#191D3A]">{vet.name}</p>
@@ -482,27 +617,16 @@ export default function ConsultationForm() {
                               <Button
                                 variant="secondary"
                                 size="sm"
-                                onClick={() =>
-                                  setSelectedMapVetId((current) => (current === vet.id ? null : vet.id))
-                                }
+                                onClick={() => {
+                                  saveBookingPrefill(vet);
+                                  router.push(
+                                    `/appointments?from=consultation&vetId=${encodeURIComponent(vet.id)}`
+                                  );
+                                }}
                               >
-                                {selectedMapVetId === vet.id ? 'Hide Map' : 'Show Map'}
+                                Book Appointment
                               </Button>
                             </div>
-
-                            {selectedMapVetId === vet.id && mapQuery && mapQuery !== 'Not provided' && (
-                              <div className="mt-3 overflow-hidden rounded-xl border border-[#C9BEFF] bg-white/70 p-2">
-                                <iframe
-                                  title={`${vet.clinicName} Map`}
-                                  src={`https://www.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed`}
-                                  className="h-64 w-full rounded-lg"
-                                  style={{ border: 0 }}
-                                  allowFullScreen
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer-when-downgrade"
-                                />
-                              </div>
-                            )}
                           </div>
                         );
                       })}

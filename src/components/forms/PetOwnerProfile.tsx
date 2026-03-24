@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import Button from '@/components/ui/Button';
@@ -25,7 +26,31 @@ interface PetState {
   imageUrl: string;
 }
 
+interface ConsultationResult {
+  possible_illnesses: string[];
+  tips: string[];
+  recommendations: string[];
+  severity: 'low' | 'medium' | 'high';
+}
+
+interface ConsultationHistoryEntry {
+  id: string;
+  createdAt: string;
+  petName: string;
+  petType: 'dog' | 'cat';
+  petAge: number;
+  symptoms: string;
+  result: ConsultationResult;
+}
+
+const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
+const PROFILE_PHOTO_KEY_PREFIX = 'petwell_profile_photo_v1_';
+
 export default function PetOwnerProfile() {
+  const searchParams = useSearchParams();
+  const section = searchParams.get('section');
+  const consultationId = searchParams.get('consultationId');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -42,6 +67,44 @@ export default function PetOwnerProfile() {
   });
   const [pets, setPets] = useState<PetState[]>([]);
   const [profilePhoto, setProfilePhoto] = useState<string>('');
+  const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
+  const [selectedConsultationId, setSelectedConsultationId] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
+      if (!rawHistory) {
+        return;
+      }
+
+      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
+      if (!Array.isArray(parsed)) {
+        return;
+      }
+
+      setConsultationHistory(parsed);
+      if (parsed.length > 0) {
+        setSelectedConsultationId(parsed[0].id);
+      }
+    } catch {
+      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (consultationId) {
+      setSelectedConsultationId(consultationId);
+    }
+  }, [consultationId]);
+
+  useEffect(() => {
+    if (section !== 'recent-consultations') {
+      return;
+    }
+
+    const target = document.getElementById('recent-consultations');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [section, consultationHistory.length]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -57,6 +120,11 @@ export default function PetOwnerProfile() {
       }
 
       setUserId(user.id);
+
+      const storedProfilePhoto = window.localStorage.getItem(`${PROFILE_PHOTO_KEY_PREFIX}${user.id}`);
+      if (storedProfilePhoto) {
+        setProfilePhoto(storedProfilePhoto);
+      }
 
       const [{ data: profileData, error: profileError }, { data: petsData, error: petsError }] =
         await Promise.all([
@@ -125,6 +193,16 @@ export default function PetOwnerProfile() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload a valid image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image size should be less than 2MB');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       setProfilePhoto(String(reader.result));
@@ -192,9 +270,34 @@ export default function PetOwnerProfile() {
       .eq('id', userId);
 
     if (profileUpdateError) {
-      toast.error(profileUpdateError.message || 'Failed to update profile');
-      setSaving(false);
-      return;
+      const fallbackNeeded = /column|does not exist|schema cache/i.test(profileUpdateError.message || '');
+
+      if (!fallbackNeeded) {
+        toast.error(profileUpdateError.message || 'Failed to update profile');
+        setSaving(false);
+        return;
+      }
+
+      const { error: fallbackError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profile.fullName.trim() || null,
+          phone: profile.phone.trim() || null,
+          address: profile.address.trim() || null,
+        })
+        .eq('id', userId);
+
+      if (fallbackError) {
+        toast.error(fallbackError.message || 'Failed to update profile');
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (profilePhoto) {
+      window.localStorage.setItem(`${PROFILE_PHOTO_KEY_PREFIX}${userId}`, profilePhoto);
+    } else {
+      window.localStorage.removeItem(`${PROFILE_PHOTO_KEY_PREFIX}${userId}`);
     }
 
     const trimmedPets = pets
@@ -205,7 +308,7 @@ export default function PetOwnerProfile() {
         age: pet.age.trim(),
         imageUrl: pet.imageUrl,
       }))
-      .filter((pet) => pet.name || pet.type || pet.age);
+      .filter((pet) => pet.name || pet.type || pet.age || pet.imageUrl);
 
     for (const pet of trimmedPets) {
      const parsedAge = pet.age ? Number(pet.age) : null;
@@ -219,6 +322,10 @@ if (
   setSaving(false);
   return;
 }
+
+      if (!pet.id && (!pet.name || !pet.type)) {
+        continue;
+      }
 
       if (!pet.name) {
         toast.error('Each pet must have a name');
@@ -545,6 +652,104 @@ if (
           </div>
         )}
       </Card>
+
+      <div id="recent-consultations">
+      <Card>
+        <h3 className="text-2xl font-bold text-[#191D3A] mb-4">Recent Consultations</h3>
+
+        {consultationHistory.length === 0 ? (
+          <p className="text-[#5E6288]">No consultation history yet.</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              {consultationHistory.map((entry) => (
+                <div
+                  key={entry.id}
+                  className={`rounded-lg border transition ${
+                    selectedConsultationId === entry.id
+                      ? 'border-[#8494FF] bg-[#EDE9FF]'
+                      : 'border-[#C9BEFF] bg-white/70'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedConsultationId((current) => (current === entry.id ? null : entry.id))
+                    }
+                    className="w-full px-4 py-3 text-left"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-[#191D3A]">
+                          {entry.petName} ({entry.petType.toUpperCase()})
+                        </p>
+                        <p className="text-sm text-[#32375D]">
+                          {new Date(entry.createdAt).toLocaleString()} • Severity: {entry.result.severity.toUpperCase()}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-sm text-[#24274A]/80">Symptoms: {entry.symptoms}</p>
+                      </div>
+                      <span className="text-xs font-semibold text-[#6367FF]">
+                        {selectedConsultationId === entry.id ? 'Hide Analysis' : 'Show Analysis'}
+                      </span>
+                    </div>
+                  </button>
+
+                  {selectedConsultationId === entry.id && (
+                    <div className="border-t border-[#C9BEFF] px-4 pb-4 pt-3">
+                      <h4 className="text-xl font-bold text-[#191D3A] mb-1">Analysis Results</h4>
+                      <p className="text-sm text-[#32375D] mb-4">
+                        {entry.petName} • {new Date(entry.createdAt).toLocaleString()}
+                      </p>
+
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
+                          <h5 className="font-semibold text-[#24274A] mb-2">Possible Illnesses</h5>
+                          <ul className="space-y-1 text-sm text-[#24274A]/85">
+                            {entry.result.possible_illnesses.length > 0 ? (
+                              entry.result.possible_illnesses.map((illness, idx) => (
+                                <li key={idx}>• {illness}</li>
+                              ))
+                            ) : (
+                              <li>No possible illnesses identified.</li>
+                            )}
+                          </ul>
+                        </section>
+
+                        <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
+                          <h5 className="font-semibold text-[#24274A] mb-2">Care Tips</h5>
+                          <ul className="space-y-1 text-sm text-[#24274A]/85">
+                            {entry.result.tips.length > 0 ? (
+                              entry.result.tips.map((tip, idx) => (
+                                <li key={idx}>• {tip}</li>
+                              ))
+                            ) : (
+                              <li>No care tips available.</li>
+                            )}
+                          </ul>
+                        </section>
+
+                        <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
+                          <h5 className="font-semibold text-[#24274A] mb-2">Recommendations</h5>
+                          <ul className="space-y-1 text-sm text-[#24274A]/85">
+                            {entry.result.recommendations.length > 0 ? (
+                              entry.result.recommendations.map((item, idx) => (
+                                <li key={idx}>• {item}</li>
+                              ))
+                            ) : (
+                              <li>No recommendations available.</li>
+                            )}
+                          </ul>
+                        </section>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Card>
+      </div>
     </div>
   );
 }

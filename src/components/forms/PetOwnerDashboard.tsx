@@ -1,11 +1,41 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Link from 'next/link';
 
+interface ConsultationHistoryEntry {
+  id: string;
+  createdAt: string;
+  petName: string;
+  petType: 'dog' | 'cat';
+  petAge: number;
+  symptoms: string;
+  result: {
+    severity: 'low' | 'medium' | 'high';
+  };
+}
+
+const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
+
 export default function PetOwnerDashboard() {
+  const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
+
+  useEffect(() => {
+    try {
+      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
+      if (!rawHistory) return;
+
+      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
+      if (!Array.isArray(parsed)) return;
+
+      setConsultationHistory(parsed);
+    } catch {
+      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
+    }
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -24,7 +54,7 @@ export default function PetOwnerDashboard() {
         </Card>
         <Card className="bg-gradient-to-br from-[#C9BEFF] to-[#8494FF]/35">
           <h3 className="text-sm font-medium pw-subtext">Consultations</h3>
-          <p className="pw-stat-number mt-2">5</p>
+          <p className="pw-stat-number mt-2">{consultationHistory.length}</p>
           <p className="pw-subtext text-sm mt-1">Total consultations</p>
         </Card>
         <Card className="bg-gradient-to-br from-[#FFDBFD] to-[#8494FF]/35">
@@ -59,21 +89,32 @@ export default function PetOwnerDashboard() {
       {/* Recent Consultations */}
       <Card>
         <h3 className="text-xl font-bold text-[#191D3A] mb-4">Recent Consultations</h3>
-        <div className="space-y-4">
-          {[1, 2, 3].map((item) => (
-            <div key={item} className="border-b pb-4 last:border-0">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="font-semibold text-[#191D3A]">Fluffy - Coughing</p>
-                  <p className="text-sm pw-subtext">March 23, 2026</p>
+        {consultationHistory.length === 0 ? (
+          <p className="pw-subtext">No consultations recorded yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {consultationHistory.map((entry) => (
+              <Link
+                key={entry.id}
+                href={`/profile?section=recent-consultations&consultationId=${encodeURIComponent(entry.id)}`}
+                className="block border-b pb-4 last:border-0"
+              >
+                <div className="flex justify-between items-start rounded-lg px-1 py-1 transition hover:bg-[#FFDBFD]/35">
+                  <div>
+                    <p className="font-semibold text-[#191D3A]">
+                      {entry.petName} - {entry.symptoms}
+                    </p>
+                    <p className="text-sm pw-subtext">{new Date(entry.createdAt).toLocaleString()}</p>
+                    <p className="mt-1 text-xs font-semibold text-[#6367FF]">Open in Profile Recent Consultations</p>
+                  </div>
+                  <span className="px-3 py-1 bg-[#C9BEFF] text-[#24274A] rounded-full text-sm font-semibold">
+                    {entry.result.severity.charAt(0).toUpperCase() + entry.result.severity.slice(1)} Risk
+                  </span>
                 </div>
-                <span className="px-3 py-1 bg-[#C9BEFF] text-[#24274A] rounded-full text-sm font-semibold">
-                  Medium Risk
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );

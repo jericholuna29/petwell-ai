@@ -7,10 +7,14 @@ import Button from '@/components/ui/Button';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
+const VET_PROFILE_PHOTO_KEY_PREFIX = 'petwell_vet_profile_photo_v1_';
+
 export default function VetProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [profilePhoto, setProfilePhoto] = useState<string>('');
   const [profile, setProfile] = useState({
     fullName: '',
     email: '',
@@ -31,6 +35,15 @@ export default function VetProfile() {
         toast.error('Please sign in to view profile');
         setLoading(false);
         return;
+      }
+
+      setUserId(authData.user.id);
+
+      const storedProfilePhoto = window.localStorage.getItem(
+        `${VET_PROFILE_PHOTO_KEY_PREFIX}${authData.user.id}`
+      );
+      if (storedProfilePhoto) {
+        setProfilePhoto(storedProfilePhoto);
       }
 
       const [{ data: profileData, error: profileError }, { data: vetData, error: vetError }] =
@@ -75,6 +88,27 @@ export default function VetProfile() {
     void loadProfile();
   }, []);
 
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please upload a valid image file');
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Image size should be less than 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setProfilePhoto(String(reader.result));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = async () => {
     setSaving(true);
 
@@ -94,6 +128,12 @@ export default function VetProfile() {
       return;
     }
 
+    if (parsedExperience !== null && parsedExperience < 0) {
+      toast.error('Years of experience cannot be negative');
+      setSaving(false);
+      return;
+    }
+
     const { error: updateProfileError } = await supabase
       .from('profiles')
       .update({
@@ -104,9 +144,28 @@ export default function VetProfile() {
       .eq('id', authData.user.id);
 
     if (updateProfileError) {
-      toast.error(updateProfileError.message || 'Failed to update profile');
-      setSaving(false);
-      return;
+      const fallbackNeeded = /column|does not exist|schema cache/i.test(updateProfileError.message || '');
+
+      if (!fallbackNeeded) {
+        toast.error(updateProfileError.message || 'Failed to update profile');
+        setSaving(false);
+        return;
+      }
+
+      const { error: fallbackError } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profile.fullName.trim() || null,
+          phone: profile.phone.trim() || null,
+          address: profile.address.trim() || null,
+        })
+        .eq('id', authData.user.id);
+
+      if (fallbackError) {
+        toast.error(fallbackError.message || 'Failed to update profile');
+        setSaving(false);
+        return;
+      }
     }
 
     const { error: updateVetError } = await supabase
@@ -127,6 +186,12 @@ export default function VetProfile() {
       toast.error(updateVetError.message || 'Failed to update veterinarian details');
       setSaving(false);
       return;
+    }
+
+    if (profilePhoto) {
+      window.localStorage.setItem(`${VET_PROFILE_PHOTO_KEY_PREFIX}${authData.user.id}`, profilePhoto);
+    } else {
+      window.localStorage.removeItem(`${VET_PROFILE_PHOTO_KEY_PREFIX}${authData.user.id}`);
     }
 
     toast.success('Profile updated successfully!');
@@ -153,9 +218,17 @@ export default function VetProfile() {
           ) : (
             <>
           <div className="flex items-center mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-[#8494FF] to-[#6367FF] rounded-full flex items-center justify-center text-white text-lg font-bold">
-              VET
-            </div>
+            {profilePhoto ? (
+              <img
+                src={profilePhoto}
+                alt="Profile"
+                className="w-20 h-20 rounded-full object-cover border border-[#C9BEFF]"
+              />
+            ) : (
+              <div className="w-20 h-20 bg-gradient-to-br from-[#8494FF] to-[#6367FF] rounded-full flex items-center justify-center text-white text-lg font-bold">
+                {profile.fullName.trim() ? profile.fullName.trim().slice(0, 2).toUpperCase() : 'VT'}
+              </div>
+            )}
             <div className="ml-6">
               <h3 className="text-2xl font-bold text-[#191D3A]">{profile.fullName}</h3>
               <p className="pw-subtext">{profile.clinic}</p>
@@ -168,6 +241,17 @@ export default function VetProfile() {
 
           {isEditing ? (
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-[#32375D] mb-2">
+                  Profile Picture
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="w-full px-3 py-2 border border-[#C9BEFF] rounded-lg bg-white"
+                />
+              </div>
               <Input
                 label="Full Name"
                 value={profile.fullName}

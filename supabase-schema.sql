@@ -465,6 +465,54 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- Function for pet owners to safely create a vet appointment-request notification
+-- (idempotent fallback when trigger was not deployed yet)
+CREATE OR REPLACE FUNCTION public.create_appointment_request_notification(p_appointment_id UUID)
+RETURNS VOID AS $$
+DECLARE
+  appointment_owner UUID;
+  appointment_vet UUID;
+BEGIN
+  SELECT pet_owner_id, vet_id
+  INTO appointment_owner, appointment_vet
+  FROM appointments
+  WHERE id = p_appointment_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Appointment not found';
+  END IF;
+
+  IF auth.uid() IS DISTINCT FROM appointment_owner THEN
+    RAISE EXCEPTION 'Only the appointment owner can create this notification';
+  END IF;
+
+  INSERT INTO notifications (
+    recipient_id,
+    appointment_id,
+    notification_type,
+    title,
+    body,
+    is_read
+  )
+  SELECT
+    appointment_vet,
+    p_appointment_id,
+    'appointment_request',
+    'New appointment request',
+    'A pet owner submitted a new appointment request.',
+    FALSE
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM notifications n
+    WHERE n.appointment_id = p_appointment_id
+      AND n.recipient_id = appointment_vet
+      AND n.notification_type = 'appointment_request'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+GRANT EXECUTE ON FUNCTION public.create_appointment_request_notification(UUID) TO authenticated;
+
 -- Add triggers for updated_at
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles

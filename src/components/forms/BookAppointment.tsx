@@ -2,12 +2,30 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import AppointmentMessageThread from '@/components/forms/AppointmentMessageThread';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+
+interface ConsultationBookingPrefill {
+  from: 'consultation';
+  createdAt: string;
+  vetId: string;
+  vetName: string;
+  petId: string;
+  petName: string;
+  petType: 'dog' | 'cat';
+  petAge: number;
+  symptoms: string;
+  severity: 'low' | 'medium' | 'high';
+  possibleIllnesses: string[];
+  recommendations: string[];
+}
+
+const CONSULTATION_BOOKING_PREFILL_KEY = 'petwell_consultation_booking_prefill_v1';
 
 interface VetProfileRow {
   id: string;
@@ -46,6 +64,10 @@ interface OwnerAppointmentRow {
 }
 
 export default function BookAppointment() {
+  const searchParams = useSearchParams();
+  const prefVetId = searchParams.get('vetId');
+  const fromConsultation = searchParams.get('from') === 'consultation';
+
   const [userId, setUserId] = useState<string | null>(null);
   const [isPetOwner, setIsPetOwner] = useState(true);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -58,6 +80,29 @@ export default function BookAppointment() {
   const [vets, setVets] = useState<VetCardItem[]>([]);
   const [pets, setPets] = useState<PetRow[]>([]);
   const [appointments, setAppointments] = useState<OwnerAppointmentRow[]>([]);
+  const [consultationPrefill, setConsultationPrefill] = useState<ConsultationBookingPrefill | null>(null);
+
+  useEffect(() => {
+    if (!fromConsultation) {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(CONSULTATION_BOOKING_PREFILL_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as ConsultationBookingPrefill;
+      if (!parsed?.vetId || parsed.from !== 'consultation') {
+        return;
+      }
+
+      setConsultationPrefill(parsed);
+    } catch {
+      window.localStorage.removeItem(CONSULTATION_BOOKING_PREFILL_KEY);
+    }
+  }, [fromConsultation]);
 
   const selectedVetData = useMemo(
     () => vets.find((vet) => vet.id === selectedVet) || null,
@@ -82,6 +127,46 @@ export default function BookAppointment() {
       return acc;
     }, {});
   }, [pets]);
+
+  useEffect(() => {
+    if (!consultationPrefill) {
+      return;
+    }
+
+    if (prefVetId && vets.some((vet) => vet.id === prefVetId)) {
+      setSelectedVet(prefVetId);
+    } else if (vets.some((vet) => vet.id === consultationPrefill.vetId)) {
+      setSelectedVet(consultationPrefill.vetId);
+    }
+
+    if (!selectedPet) {
+      if (consultationPrefill.petId && pets.some((pet) => pet.id === consultationPrefill.petId)) {
+        setSelectedPet(consultationPrefill.petId);
+      } else {
+        const normalizedPetName = consultationPrefill.petName.trim().toLowerCase();
+        const matchedPet = pets.find((pet) => pet.name.trim().toLowerCase() === normalizedPetName);
+        if (matchedPet) {
+          setSelectedPet(matchedPet.id);
+        }
+      }
+    }
+
+    if (!notes.trim()) {
+      const illnessSummary = consultationPrefill.possibleIllnesses.slice(0, 3).join(', ') || 'N/A';
+      const recommendationSummary = consultationPrefill.recommendations.slice(0, 3).join('; ') || 'N/A';
+
+      setNotes(
+        [
+          `Consultation Summary (${new Date(consultationPrefill.createdAt).toLocaleString()}):`,
+          `Pet: ${consultationPrefill.petName} (${consultationPrefill.petType}, ${consultationPrefill.petAge} years old)`,
+          `Symptoms: ${consultationPrefill.symptoms}`,
+          `AI Severity: ${consultationPrefill.severity.toUpperCase()}`,
+          `Possible Illnesses: ${illnessSummary}`,
+          `Recommendations: ${recommendationSummary}`,
+        ].join('\n')
+      );
+    }
+  }, [consultationPrefill, notes, pets, prefVetId, selectedPet, vets]);
 
   const loadOwnerAppointments = async (ownerId: string) => {
     const { data, error } = await supabase
@@ -213,7 +298,9 @@ export default function BookAppointment() {
         throw new Error('Invalid appointment date/time');
       }
 
-      const { error } = await supabase.from('appointments').insert([
+      const { data: insertedAppointment, error } = await supabase
+        .from('appointments')
+        .insert([
         {
           pet_owner_id: userId,
           pet_id: selectedPet,
@@ -222,18 +309,32 @@ export default function BookAppointment() {
           appointment_type: 'consultation',
           notes: notes.trim() || null,
         },
-      ]);
+        ])
+        .select('id')
+        .single();
 
       if (error) {
         throw error;
       }
 
+      if (insertedAppointment?.id) {
+        const { error: notifyError } = await supabase.rpc('create_appointment_request_notification', {
+          p_appointment_id: insertedAppointment.id,
+        });
+
+        if (notifyError) {
+          toast.error(notifyError.message || 'Appointment booked, but vet notification failed');
+        }
+      }
+
       toast.success('Appointment request sent. Please wait for vet clinic approval.');
+      window.localStorage.removeItem(CONSULTATION_BOOKING_PREFILL_KEY);
       setSelectedVet('');
       setSelectedPet('');
       setAppointmentDate('');
       setAppointmentTime('');
       setNotes('');
+      setConsultationPrefill(null);
       await loadOwnerAppointments(userId);
     } catch (error: any) {
       toast.error(error?.message || 'Failed to book appointment');
@@ -268,6 +369,17 @@ export default function BookAppointment() {
       <Card>
         <h2 className="text-3xl font-bold text-[#191D3A] mb-2">Book Appointment</h2>
         <p className="pw-subtext mb-6">Select your pet, choose a registered veterinarian, and schedule your appointment</p>
+
+        {fromConsultation && consultationPrefill && (
+          <div className="mb-6 rounded-lg border border-[#8494FF] bg-[#C9BEFF]/35 p-4">
+            <p className="text-sm font-semibold text-[#24274A]">
+              Consultation details loaded. Veterinarian and notes are prefilled from your AI consultation.
+            </p>
+            <p className="mt-1 text-sm text-[#32375D]">
+              Please choose your pet and schedule date/time, then confirm booking.
+            </p>
+          </div>
+        )}
 
         {pets.length === 0 && (
           <div className="mb-6 rounded-lg border border-[#C9BEFF] bg-[#FFDBFD]/55 p-4">

@@ -89,7 +89,6 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     role === 'vet'
       ? [
           { href: '/dashboard', label: 'Dashboard' },
-          { href: '/consultation', label: 'Consultation' },
           { href: '/appointments', label: 'Appointment Schedule' },
           { href: '/messages', label: 'Messages' },
           {

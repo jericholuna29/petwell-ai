@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import AppointmentMessageThread from '@/components/forms/AppointmentMessageThread';
 import { supabase } from '@/lib/supabase';
@@ -31,12 +33,41 @@ interface MessageRow {
 }
 
 export default function PetOwnerMessagesInbox() {
+  const searchParams = useSearchParams();
+  const selectedVetId = searchParams.get('vetId');
+  const selectedVetName = searchParams.get('vetName');
+
   const [loading, setLoading] = useState(true);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<AppointmentRow[]>([]);
   const [vetsById, setVetsById] = useState<Record<string, VetRow>>({});
   const [petsById, setPetsById] = useState<Record<string, PetRow>>({});
   const [messageCounts, setMessageCounts] = useState<Record<string, number>>({});
+
+  const hasSelectedVetConversation = useMemo(() => {
+    if (!selectedVetId) {
+      return false;
+    }
+
+    return appointments.some((item) => item.vet_id === selectedVetId);
+  }, [appointments, selectedVetId]);
+
+  const orderedAppointments = useMemo(() => {
+    if (!selectedVetId) {
+      return appointments;
+    }
+
+    return [...appointments].sort((a, b) => {
+      const aSelected = a.vet_id === selectedVetId ? 0 : 1;
+      const bSelected = b.vet_id === selectedVetId ? 0 : 1;
+
+      if (aSelected !== bSelected) {
+        return aSelected - bSelected;
+      }
+
+      return new Date(b.appointment_date).getTime() - new Date(a.appointment_date).getTime();
+    });
+  }, [appointments, selectedVetId]);
 
   useEffect(() => {
     const loadInbox = async () => {
@@ -140,6 +171,25 @@ export default function PetOwnerMessagesInbox() {
       <Card>
         <h2 className="text-3xl font-bold text-[#191D3A] mb-2">Messages</h2>
         <p className="pw-subtext">View and reply to messages from your veterinarian.</p>
+
+        {selectedVetId && hasSelectedVetConversation && (
+          <div className="mt-3 rounded-lg border border-[#8494FF] bg-[#C9BEFF]/35 p-3">
+            <p className="text-sm font-semibold text-[#24274A]">
+              Now showing messages for {selectedVetName || 'your selected vet clinic'} first.
+            </p>
+          </div>
+        )}
+
+        {selectedVetId && !hasSelectedVetConversation && (
+          <div className="mt-3 rounded-lg border border-[#C9BEFF] bg-[#FFDBFD]/55 p-3">
+            <p className="text-sm text-[#24274A]">
+              No approved message thread yet for {selectedVetName || 'this vet clinic'}. Book or wait for appointment approval first.
+            </p>
+            <Link href="/appointments" className="mt-2 inline-block text-sm font-semibold text-[#6367FF] hover:underline">
+              Go to Appointments
+            </Link>
+          </div>
+        )}
       </Card>
 
       <Card>
@@ -147,7 +197,7 @@ export default function PetOwnerMessagesInbox() {
           <p className="pw-subtext">No approved appointments available for messaging yet.</p>
         ) : (
           <div className="space-y-4">
-            {appointments.map((appointment) => {
+            {orderedAppointments.map((appointment) => {
               const vet = vetsById[appointment.vet_id];
               const pet = petsById[appointment.pet_id];
               const totalMessages = messageCounts[appointment.id] || 0;
