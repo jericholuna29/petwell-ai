@@ -137,7 +137,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFDBFD] via-[#C9BEFF]/70 to-[#8494FF]/25">
+    <div className="min-h-screen bg-white">
       {/* Navigation */}
       <nav className="sticky top-0 z-30 border-b border-[#C9BEFF]/70 bg-white/78 shadow-[0_8px_30px_rgba(99,103,255,0.08)] backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 py-3 md:py-4">

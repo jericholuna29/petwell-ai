@@ -24,7 +24,7 @@
 }
 
 body {
-  background: var(--background);
+  background: #ffffff;
   color: var(--foreground);
   font-family: var(--font-geist-sans), 'Segoe UI', sans-serif;
   line-height: 1.5;

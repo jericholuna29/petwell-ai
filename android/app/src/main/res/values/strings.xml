@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PetWell AI</string>
+    <string name="title_activity_main">PetWell AI</string>
+    <string name="package_name">com.petwell.ai</string>
+    <string name="custom_url_scheme">com.petwell.ai</string>
+</resources>

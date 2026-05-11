@@ -156,6 +156,30 @@ export default function PetOwnerMessagesInbox() {
     void loadInbox();
   }, []);
 
+  const handleDeleteConversation = async (appointmentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this conversation? All messages will be permanently deleted.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', appointmentId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Conversation deleted successfully');
+      setAppointments((current) =>
+        current.filter((appointment) => appointment.id !== appointmentId)
+      );
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to delete conversation');
+    }
+  };
+
   if (loading) {
     return (
       <div className="max-w-5xl mx-auto p-4">
@@ -213,9 +237,17 @@ export default function PetOwnerMessagesInbox() {
                         Pet: {pet?.name || 'Pet'} | Appointment: {new Date(appointment.appointment_date).toLocaleString()}
                       </p>
                     </div>
-                    <span className="self-start rounded-full bg-[#C9BEFF] px-3 py-1 text-xs font-semibold text-[#24274A]">
-                      Messages: {totalMessages}
-                    </span>
+                    <div className="flex flex-col items-start gap-2">
+                      <span className="rounded-full bg-[#C9BEFF] px-3 py-1 text-xs font-semibold text-[#24274A]">
+                        Messages: {totalMessages}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteConversation(appointment.id)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors"
+                      >
+                        Delete Conversation
+                      </button>
+                    </div>
                   </div>
 
                   <AppointmentMessageThread

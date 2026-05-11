@@ -63,6 +63,18 @@ export default function NotificationsCenter() {
 
       setUserId(authData.user.id);
       await loadNotifications(authData.user.id);
+
+      // Mark all as read when page loads
+      const { error: markError } = await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('recipient_id', authData.user.id)
+        .eq('is_read', false);
+
+      if (!markError) {
+        // Reload to reflect changes
+        await loadNotifications(authData.user.id);
+      }
     };
 
     void initialize();

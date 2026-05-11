@@ -7,7 +7,7 @@ import Card from '@/components/ui/Card';
 
 export default function HomePage() {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#FFDBFD] via-[#C9BEFF]/75 to-[#8494FF]/45 text-[#24274A]">
+    <div className="relative min-h-screen overflow-hidden bg-white text-[#24274A]">
       <div className="pointer-events-none absolute -left-24 -top-20 h-72 w-72 rounded-full bg-[#FFDBFD]/85 blur-3xl" />
       <div className="pointer-events-none absolute bottom-0 right-0 h-80 w-80 rounded-full bg-[#8494FF]/30 blur-3xl" />
 

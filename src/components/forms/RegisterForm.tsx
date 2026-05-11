@@ -8,6 +8,29 @@ import Button from '@/components/ui/Button';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 
+const SPECIALIZATIONS = [
+  'Small Animals',
+  'Large Animals',
+  'Surgery',
+  'Dermatology',
+  'Cardiology',
+  'Oncology',
+  'Dentistry',
+  'Orthopedic Surgery',
+  'Internal Medicine',
+  'Emergency & Critical Care',
+  'Exotic Animals',
+  'Ophthalmology',
+  'Neurology',
+  'Reproduction',
+  'Pathology',
+  'Radiology',
+  'Anesthesiology',
+  'Preventive Medicine',
+  'Nutrition',
+  'Behavioral Medicine',
+];
+
 export default function RegisterForm() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -19,10 +42,22 @@ export default function RegisterForm() {
   const [clinicName, setClinicName] = useState('');
   const [clinicAddress, setClinicAddress] = useState('');
   const [specialization, setSpecialization] = useState('');
+  const [specializationSearch, setSpecializationSearch] = useState('');
+  const [showSpecializationDropdown, setShowSpecializationDropdown] = useState(false);
   const [experienceYears, setExperienceYears] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const filteredSpecializations = SPECIALIZATIONS.filter((spec) =>
+    spec.toLowerCase().includes(specializationSearch.toLowerCase())
+  );
+
+  const selectSpecialization = (spec: string) => {
+    setSpecialization(spec);
+    setSpecializationSearch('');
+    setShowSpecializationDropdown(false);
+  };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -203,14 +238,70 @@ export default function RegisterForm() {
             error={errors.clinicAddress}
             placeholder="Clinic location for map recommendation"
           />
-          <Input
-            label="Specialization"
-            type="text"
-            value={specialization}
-            onChange={(e) => setSpecialization(e.target.value)}
-            error={errors.specialization}
-            placeholder="Small Animals, Surgery, Dermatology"
-          />
+
+          {/* Specialization Dropdown */}
+          <div className="relative">
+            <label className="block text-sm font-medium text-[#32375D] mb-2">
+              Specialization
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search specialization..."
+                value={showSpecializationDropdown ? specializationSearch : specialization}
+                onChange={(e) => setSpecializationSearch(e.target.value)}
+                onFocus={() => setShowSpecializationDropdown(true)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#6367FF] focus:border-transparent transition-all"
+              />
+              {specialization && !showSpecializationDropdown && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSpecialization('');
+                    setSpecializationSearch('');
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Dropdown menu */}
+            {showSpecializationDropdown && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                {filteredSpecializations.length > 0 ? (
+                  filteredSpecializations.map((spec) => (
+                    <button
+                      key={spec}
+                      type="button"
+                      onClick={() => selectSpecialization(spec)}
+                      className={`w-full text-left px-4 py-2 hover:bg-[#F5F3FF] transition-colors ${
+                        specialization === spec ? 'bg-[#6367FF]/10 text-[#6367FF] font-semibold' : 'text-[#32375D]'
+                      }`}
+                    >
+                      {spec}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-2 text-gray-500 text-sm">No specialization found</div>
+                )}
+              </div>
+            )}
+
+            {errors.specialization && (
+              <p className="mt-1 text-sm text-red-500">{errors.specialization}</p>
+            )}
+          </div>
+
+          {/* Close dropdown when clicking outside */}
+          {showSpecializationDropdown && (
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowSpecializationDropdown(false)}
+            />
+          )}
+
           <Input
             label="Years of Experience (Optional)"
             type="number"

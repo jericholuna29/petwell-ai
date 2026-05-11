@@ -110,7 +110,7 @@ export default function VetAppointmentSchedule() {
 
   const handleStatusUpdate = async (
     appointmentId: string,
-    nextStatus: 'confirmed' | 'cancelled'
+    nextStatus: 'cancelled'
   ) => {
     if (!vetId) {
       toast.error('Unable to verify veterinarian account');
@@ -139,20 +139,37 @@ export default function VetAppointmentSchedule() {
       return;
     }
 
+    // Remove the cancelled appointment from the list
     setAppointments((current) =>
-      current.map((appointment) =>
-        appointment.id === appointmentId
-          ? { ...appointment, status: nextStatus }
-          : appointment
-      )
+      current.filter((appointment) => appointment.id !== appointmentId)
     );
 
-    toast.success(
-      nextStatus === 'confirmed'
-        ? 'Appointment approved successfully'
-        : 'Appointment declined successfully'
-    );
+    toast.success('Appointment cancelled successfully');
     setUpdatingId(null);
+  };
+
+  const handleDeleteAppointment = async (appointmentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this appointment?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', appointmentId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Appointment deleted successfully');
+      setAppointments((current) =>
+        current.filter((appointment) => appointment.id !== appointmentId)
+      );
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to delete appointment');
+    }
   };
 
   const groupedAppointments = useMemo(() => {
@@ -171,7 +188,7 @@ export default function VetAppointmentSchedule() {
       <Card>
         <h2 className="text-3xl font-bold text-[#191D3A] mb-2">Appointment Schedule</h2>
         <p className="pw-subtext">
-          Appointments booked by pet owners for your veterinary clinic.
+          View and manage confirmed appointments with pet owners.
         </p>
       </Card>
 
@@ -216,29 +233,22 @@ export default function VetAppointmentSchedule() {
                           )}
                         </div>
                         <div className="flex flex-col items-start gap-2">
-                          <span className="self-start rounded-full bg-[#C9BEFF] px-3 py-1 text-sm font-semibold text-[#24274A]">
-                            {appointment.status}
+                          <span className="self-start rounded-full bg-[#CFF7DE] px-3 py-1 text-sm font-semibold text-[#1E6B3A]">
+                            Confirmed
                           </span>
-                          {appointment.status === 'pending' && (
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                loading={updatingId === appointment.id}
-                                onClick={() => handleStatusUpdate(appointment.id, 'confirmed')}
-                              >
-                                Approve
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                disabled={updatingId === appointment.id}
-                                onClick={() => handleStatusUpdate(appointment.id, 'cancelled')}
-                              >
-                                Decline
-                              </Button>
-                            </div>
-                          )}
+                          <button
+                            onClick={() => handleStatusUpdate(appointment.id, 'cancelled')}
+                            disabled={updatingId === appointment.id}
+                            className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors disabled:opacity-60"
+                          >
+                            Cancel Appointment
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAppointment(appointment.id)}
+                            className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors"
+                          >
+                            Delete
+                          </button>
                         </div>
                       </div>
 

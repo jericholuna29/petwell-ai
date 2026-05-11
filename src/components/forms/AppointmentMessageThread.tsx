@@ -143,6 +143,28 @@ export default function AppointmentMessageThread({
     setSending(false);
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!window.confirm('Are you sure you want to delete this message?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('appointment_messages')
+        .delete()
+        .eq('id', messageId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Message deleted successfully');
+      await loadMessages();
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to delete message');
+    }
+  };
+
   return (
     <div className="mt-4 rounded-xl border border-[#C9BEFF] bg-white/70 p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -170,7 +192,7 @@ export default function AppointmentMessageThread({
             return (
               <div
                 key={item.id}
-                className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${isMine ? 'justify-end' : 'justify-start'} group`}
               >
                 <div
                   className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
@@ -181,9 +203,19 @@ export default function AppointmentMessageThread({
                 >
                   <p className="mb-1 text-xs font-semibold opacity-90">{senderName}</p>
                   <p>{item.message}</p>
-                  <p className="mt-1 text-[11px] opacity-80">
-                    {new Date(item.created_at).toLocaleString()}
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mt-1">
+                    <p className="text-[11px] opacity-80">
+                      {new Date(item.created_at).toLocaleString()}
+                    </p>
+                    {isMine && (
+                      <button
+                        onClick={() => handleDeleteMessage(item.id)}
+                        className="text-[10px] opacity-60 hover:opacity-100 transition-opacity"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

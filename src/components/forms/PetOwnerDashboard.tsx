@@ -4,36 +4,97 @@ import React, { useEffect, useState } from 'react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import toast from 'react-hot-toast';
+
+interface Pet {
+  id: string;
+  name: string;
+  species: string;
+  age: number | null;
+}
+
+interface Appointment {
+  id: string;
+  appointment_date: string;
+  status: string;
+}
 
 interface ConsultationHistoryEntry {
   id: string;
-  createdAt: string;
-  petName: string;
-  petType: 'dog' | 'cat';
-  petAge: number;
+  created_at: string;
+  pet_name: string;
+  pet_type: 'dog' | 'cat';
+  pet_age: number;
   symptoms: string;
-  result: {
-    severity: 'low' | 'medium' | 'high';
-  };
+  severity: 'low' | 'medium' | 'high';
 }
 
-const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
-
 export default function PetOwnerDashboard() {
+  const [pets, setPets] = useState<Pet[]>([]);
   const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    try {
-      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
-      if (!rawHistory) return;
+    const loadUserData = async () => {
+      try {
+        setLoading(true);
 
-      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
-      if (!Array.isArray(parsed)) return;
+        // Get current user
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          toast.error('Not authenticated');
+          setLoading(false);
+          return;
+        }
 
-      setConsultationHistory(parsed);
-    } catch {
-      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
-    }
+        const userId = authData.user.id;
+
+        // Fetch user's pets
+        const { data: petsData, error: petsError } = await supabase
+          .from('pets')
+          .select('id, name, species, age')
+          .eq('owner_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (!petsError) {
+          setPets(petsData || []);
+        }
+
+        // Fetch user's consultations
+        const { data: consultationsData, error: consultationsError } = await supabase
+          .from('ai_consultations')
+          .select('id, created_at, pet_name, pet_type, pet_age, symptoms, severity')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (!consultationsError) {
+          setConsultationHistory(consultationsData || []);
+        }
+
+        // Fetch user's upcoming appointments
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id, appointment_date, status')
+          .eq('pet_owner_id', userId)
+          .gte('appointment_date', new Date().toISOString())
+          .order('appointment_date', { ascending: true })
+          .limit(5);
+
+        if (!appointmentsError) {
+          setAppointments(appointmentsData || []);
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
+        toast.error('Failed to load dashboard data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void loadUserData();
   }, []);
 
   return (
@@ -49,7 +110,7 @@ export default function PetOwnerDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-gradient-to-br from-[#FFDBFD] to-[#C9BEFF]">
           <h3 className="text-sm font-medium pw-subtext">My Pets</h3>
-          <p className="pw-stat-number mt-2">2</p>
+          <p className="pw-stat-number mt-2">{pets.length}</p>
           <p className="pw-subtext text-sm mt-1">Active pets</p>
         </Card>
         <Card className="bg-gradient-to-br from-[#C9BEFF] to-[#8494FF]/35">
@@ -59,7 +120,7 @@ export default function PetOwnerDashboard() {
         </Card>
         <Card className="bg-gradient-to-br from-[#FFDBFD] to-[#8494FF]/35">
           <h3 className="text-sm font-medium pw-subtext">Appointments</h3>
-          <p className="pw-stat-number mt-2">1</p>
+          <p className="pw-stat-number mt-2">{appointments.length}</p>
           <p className="pw-subtext text-sm mt-1">Upcoming</p>
         </Card>
       </div>
@@ -102,13 +163,13 @@ export default function PetOwnerDashboard() {
                 <div className="flex justify-between items-start rounded-lg px-1 py-1 transition hover:bg-[#FFDBFD]/35">
                   <div>
                     <p className="font-semibold text-[#191D3A]">
-                      {entry.petName} - {entry.symptoms}
+                      {entry.pet_name} - {entry.symptoms}
                     </p>
-                    <p className="text-sm pw-subtext">{new Date(entry.createdAt).toLocaleString()}</p>
+                    <p className="text-sm pw-subtext">{new Date(entry.created_at).toLocaleString()}</p>
                     <p className="mt-1 text-xs font-semibold text-[#6367FF]">Open in Profile Recent Consultations</p>
                   </div>
                   <span className="px-3 py-1 bg-[#C9BEFF] text-[#24274A] rounded-full text-sm font-semibold">
-                    {entry.result.severity.charAt(0).toUpperCase() + entry.result.severity.slice(1)} Risk
+                    {entry.severity.charAt(0).toUpperCase() + entry.severity.slice(1)} Risk
                   </span>
                 </div>
               </Link>

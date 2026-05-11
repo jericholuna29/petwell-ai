@@ -17,34 +17,6 @@ interface ConsultationResponse {
   severity: 'low' | 'medium' | 'high';
 }
 
-interface VetProfileRow {
-  id: string;
-  full_name: string | null;
-  email: string;
-  phone: string | null;
-  address: string | null;
-}
-
-interface VetDetailsRow {
-  id: string;
-  clinic_name: string | null;
-  clinic_address: string | null;
-  specialization: string | null;
-  experience_years: number | null;
-}
-
-interface RecommendedVet {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  clinicName: string;
-  clinicAddress: string;
-  specialization: string;
-  experienceYears: string;
-}
-
 interface ConsultationHistoryEntry {
   id: string;
   createdAt: string;
@@ -62,23 +34,52 @@ interface PetOption {
   age: number | null;
 }
 
-interface ConsultationBookingPrefill {
-  from: 'consultation';
-  createdAt: string;
-  vetId: string;
-  vetName: string;
-  petId: string;
-  petName: string;
-  petType: 'dog' | 'cat';
-  petAge: number;
-  symptoms: string;
-  severity: 'low' | 'medium' | 'high';
-  possibleIllnesses: string[];
-  recommendations: string[];
-}
-
-const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
-const CONSULTATION_BOOKING_PREFILL_KEY = 'petwell_consultation_booking_prefill_v1';
+const COMMON_SYMPTOMS = {
+  dog: [
+    'Vomiting',
+    'Diarrhea',
+    'Lethargy',
+    'Coughing',
+    'Sneezing',
+    'Itching',
+    'Hair loss',
+    'Loss of appetite',
+    'Weight loss',
+    'Excessive thirst',
+    'Frequent urination',
+    'Lameness',
+    'Limping',
+    'Ear discharge',
+    'Eye discharge',
+    'Bad breath',
+    'Gum inflammation',
+    'Difficulty breathing',
+    'Wheezing',
+    'Seizures',
+  ],
+  cat: [
+    'Vomiting',
+    'Diarrhea',
+    'Constipation',
+    'Lethargy',
+    'Sneezing',
+    'Coughing',
+    'Itching',
+    'Hair loss',
+    'Loss of appetite',
+    'Weight loss',
+    'Excessive thirst',
+    'Frequent urination',
+    'Difficulty urinating',
+    'Lameness',
+    'Limping',
+    'Ear discharge',
+    'Eye discharge',
+    'Bad breath',
+    'Gum inflammation',
+    'Drooling',
+  ],
+};
 
 export default function ConsultationForm() {
   const router = useRouter();
@@ -89,40 +90,12 @@ export default function ConsultationForm() {
   const [petType, setPetType] = useState<'dog' | 'cat'>('dog');
   const [petAge, setPetAge] = useState('');
   const [symptoms, setSymptoms] = useState('');
+  const [filteredSymptoms, setFilteredSymptoms] = useState<string[]>([]);
+  const [showSymptomDropdown, setShowSymptomDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ConsultationResponse | null>(null);
-  const [recommendedVets, setRecommendedVets] = useState<RecommendedVet[]>([]);
-  const [loadingVets, setLoadingVets] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
-
-  const saveBookingPrefill = (vet: RecommendedVet) => {
-    if (!result) {
-      return;
-    }
-
-    if (!selectedPetId) {
-      return;
-    }
-
-    const parsedPetAge = Number(petAge);
-    const payload: ConsultationBookingPrefill = {
-      from: 'consultation',
-      createdAt: new Date().toISOString(),
-      vetId: vet.id,
-      vetName: vet.name,
-      petId: selectedPetId,
-      petName: petName.trim(),
-      petType,
-      petAge: Number.isFinite(parsedPetAge) ? parsedPetAge : 0,
-      symptoms: symptoms.trim(),
-      severity: result.severity,
-      possibleIllnesses: result.possible_illnesses,
-      recommendations: result.recommendations,
-    };
-
-    window.localStorage.setItem(CONSULTATION_BOOKING_PREFILL_KEY, JSON.stringify(payload));
-  };
 
   useEffect(() => {
     const loadPets = async () => {
@@ -183,96 +156,76 @@ export default function ConsultationForm() {
   }, [selectedPetId, petOptions]);
 
   useEffect(() => {
-    try {
-      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
-      if (!rawHistory) return;
+    const loadConsultationHistory = async () => {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
+        return;
+      }
 
-      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
-      if (!Array.isArray(parsed) || parsed.length === 0) return;
+      const { data, error } = await supabase
+        .from('ai_consultations')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
 
-      setConsultationHistory(parsed);
+      if (error) {
+        console.error('Failed to load consultation history:', error);
+        return;
+      }
 
-      const latest = parsed[0];
+      if (!data || data.length === 0) return;
+
+      const entries: ConsultationHistoryEntry[] = data.map((row: any) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        petName: row.pet_name,
+        petType: row.pet_type as 'dog' | 'cat',
+        petAge: row.pet_age,
+        symptoms: row.symptoms,
+        result: {
+          possible_illnesses: row.possible_illnesses,
+          tips: row.tips,
+          recommendations: row.recommendations,
+          severity: row.severity,
+        },
+      }));
+
+      setConsultationHistory(entries);
+
+      const latest = entries[0];
       setPetName(latest.petName);
       setPetType(latest.petType);
       setPetAge(String(latest.petAge));
       setSymptoms(latest.symptoms);
       setResult(latest.result);
-    } catch {
-      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
-    }
+    };
+
+    void loadConsultationHistory();
   }, []);
 
-  useEffect(() => {
-    if (!result || result.severity === 'low' || recommendedVets.length > 0 || loadingVets) {
+  const handleSymptomChange = (value: string) => {
+    setSymptoms(value);
+
+    if (!value.trim()) {
+      setFilteredSymptoms([]);
+      setShowSymptomDropdown(false);
       return;
     }
 
-    loadRecommendedVets();
-  }, [result, recommendedVets.length, loadingVets]);
+    const availableSymptoms = COMMON_SYMPTOMS[petType] || [];
+    const filtered = availableSymptoms.filter((s) =>
+      s.toLowerCase().includes(value.toLowerCase())
+    );
 
-  const loadRecommendedVets = async () => {
-    setLoadingVets(true);
+    setFilteredSymptoms(filtered);
+    setShowSymptomDropdown(filtered.length > 0);
+  };
 
-    const { data: profileData, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, phone, address')
-      .eq('role', 'vet')
-      .order('created_at', { ascending: false })
-      .limit(6);
-
-    if (profileError) {
-      toast.error(profileError.message || 'Failed to load veterinarian recommendations');
-      setRecommendedVets([]);
-      setLoadingVets(false);
-      return;
-    }
-
-    const vetProfiles = (profileData || []) as VetProfileRow[];
-    if (!vetProfiles.length) {
-      setRecommendedVets([]);
-      setLoadingVets(false);
-      return;
-    }
-
-    const vetIds = vetProfiles.map((row) => row.id);
-    const { data: vetData, error: vetError } = await supabase
-      .from('vets')
-      .select('id, clinic_name, clinic_address, specialization, experience_years')
-      .in('id', vetIds);
-
-    if (vetError) {
-      toast.error(vetError.message || 'Failed to load clinic information');
-      setRecommendedVets([]);
-      setLoadingVets(false);
-      return;
-    }
-
-    const vetDetailsMap = new Map<string, VetDetailsRow>();
-    ((vetData || []) as VetDetailsRow[]).forEach((row) => {
-      vetDetailsMap.set(row.id, row);
-    });
-
-    const merged = vetProfiles.map((profile) => {
-      const details = vetDetailsMap.get(profile.id);
-      return {
-        id: profile.id,
-        name: profile.full_name?.trim() || profile.email,
-        email: profile.email,
-        phone: profile.phone?.trim() || 'Not provided',
-        address: profile.address?.trim() || 'Not provided',
-        clinicName: details?.clinic_name?.trim() || 'Independent Practice',
-        clinicAddress: details?.clinic_address?.trim() || profile.address?.trim() || 'Location not provided',
-        specialization: details?.specialization?.trim() || 'General Veterinary Care',
-        experienceYears:
-          typeof details?.experience_years === 'number'
-            ? `${details.experience_years} years`
-            : 'Not provided',
-      };
-    });
-
-    setRecommendedVets(merged);
-    setLoadingVets(false);
+  const selectSymptom = (symptom: string) => {
+    setSymptoms(symptom);
+    setFilteredSymptoms([]);
+    setShowSymptomDropdown(false);
   };
 
   const validateForm = () => {
@@ -284,9 +237,33 @@ export default function ConsultationForm() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const persistHistory = (nextHistory: ConsultationHistoryEntry[]) => {
-    setConsultationHistory(nextHistory);
-    window.localStorage.setItem(CONSULTATION_HISTORY_KEY, JSON.stringify(nextHistory));
+  const persistHistory = async (entry: ConsultationHistoryEntry) => {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      toast.error('Not authenticated');
+      return;
+    }
+
+    const { error } = await supabase.from('ai_consultations').insert({
+      user_id: authData.user.id,
+      pet_id: selectedPetId,
+      pet_name: entry.petName,
+      pet_type: entry.petType,
+      pet_age: entry.petAge,
+      symptoms: entry.symptoms,
+      possible_illnesses: entry.result.possible_illnesses,
+      tips: entry.result.tips,
+      recommendations: entry.result.recommendations,
+      severity: entry.result.severity,
+    });
+
+    if (error) {
+      console.error('Failed to save consultation:', error);
+      toast.error('Failed to save consultation to database');
+      return;
+    }
+
+    setConsultationHistory([entry, ...consultationHistory]);
   };
 
   const loadHistoryEntry = (entry: ConsultationHistoryEntry) => {
@@ -298,10 +275,25 @@ export default function ConsultationForm() {
     setErrors({});
   };
 
-  const clearHistory = () => {
+  const clearHistory = async () => {
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) {
+      toast.error('Not authenticated');
+      return;
+    }
+
+    const { error } = await supabase
+      .from('ai_consultations')
+      .delete()
+      .eq('user_id', authData.user.id);
+
+    if (error) {
+      toast.error('Failed to clear consultation history');
+      return;
+    }
+
     setConsultationHistory([]);
     setResult(null);
-    window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
     toast.success('Consultation history cleared.');
   };
 
@@ -331,23 +323,34 @@ export default function ConsultationForm() {
       }
 
       const data = await response.json();
-      setResult(data);
-      await loadRecommendedVets();
 
-      const nextHistory: ConsultationHistoryEntry[] = [
-        {
-          id: `${Date.now()}`,
-          createdAt: new Date().toISOString(),
-          petName: petName.trim(),
-          petType,
-          petAge: parsedPetAge,
-          symptoms: normalizedSymptoms,
-          result: data,
-        },
-        ...consultationHistory,
-      ];
+      const nextHistory: ConsultationHistoryEntry = {
+        id: `${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        petName: petName.trim(),
+        petType,
+        petAge: parsedPetAge,
+        symptoms: normalizedSymptoms,
+        result: data,
+      };
 
-      persistHistory(nextHistory);
+      await persistHistory(nextHistory);
+
+      // Redirect to results page with data
+      const resultData = {
+        petName: petName.trim(),
+        petType,
+        symptoms: normalizedSymptoms,
+        possible_illnesses: data.possible_illnesses,
+        tips: data.tips,
+        recommendations: data.recommendations,
+        severity: data.severity,
+      };
+
+      const resultsUrl = `/consultation/results?result=${encodeURIComponent(
+        JSON.stringify(resultData)
+      )}`;
+      router.push(resultsUrl);
       toast.success('Consultation analysis complete!');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to get consultation';
@@ -355,18 +358,6 @@ export default function ConsultationForm() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const severity_colors = {
-    low: 'bg-gradient-to-br from-[#FFDBFD] to-[#C9BEFF] border-[#C9BEFF]',
-    medium: 'bg-gradient-to-br from-[#C9BEFF] to-[#8494FF]/30 border-[#8494FF]',
-    high: 'bg-gradient-to-br from-[#C9BEFF] to-[#6367FF]/30 border-[#6367FF]',
-  };
-
-  const severity_badge = {
-    low: 'bg-[#FFDBFD] text-[#24274A]',
-    medium: 'bg-[#C9BEFF] text-[#24274A]',
-    high: 'bg-[#8494FF] text-white',
   };
 
   return (
@@ -447,15 +438,45 @@ export default function ConsultationForm() {
             <label className="block text-sm font-medium text-[#32375D] mb-2">
               Symptoms Description
             </label>
-            <textarea
-              value={symptoms}
-              onChange={(e) => setSymptoms(e.target.value)}
-              className={`w-full px-4 py-2 border border-[#C9BEFF] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8494FF] ${
-                errors.symptoms ? 'border-[#6367FF]' : ''
-              }`}
-              rows={5}
-              placeholder="Describe your pet's symptoms in detail..."
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={symptoms}
+                onChange={(e) => handleSymptomChange(e.target.value)}
+                onFocus={() => {
+                  if (symptoms.trim() && filteredSymptoms.length > 0) {
+                    setShowSymptomDropdown(true);
+                  }
+                }}
+                className={`w-full px-4 py-2 border border-[#C9BEFF] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8494FF] ${
+                  errors.symptoms ? 'border-[#6367FF]' : ''
+                }`}
+                placeholder="Type or select a symptom..."
+              />
+
+              {showSymptomDropdown && filteredSymptoms.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-[#C9BEFF] rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
+                  {filteredSymptoms.map((symptom) => (
+                    <button
+                      key={symptom}
+                      type="button"
+                      onClick={() => selectSymptom(symptom)}
+                      className="w-full text-left px-4 py-2 hover:bg-[#F5F3FF] hover:text-[#6367FF] text-[#32375D] transition-colors"
+                    >
+                      {symptom}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {symptoms && (
+              <div className="mt-3 p-3 bg-[#F5F3FF] rounded-lg">
+                <p className="text-sm font-medium text-[#32375D] mb-2">Selected symptom:</p>
+                <p className="text-[#6367FF]">{symptoms}</p>
+              </div>
+            )}
+
             {errors.symptoms && (
               <p className="text-[#6367FF] text-sm mt-1">{errors.symptoms}</p>
             )}
@@ -508,133 +529,6 @@ export default function ConsultationForm() {
               </button>
             ))}
           </div>
-        </Card>
-      )}
-
-      {result && (
-        <Card className={`border-2 ${severity_colors[result.severity]}`}>
-          <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-2xl font-bold text-[#191D3A]">Analysis Results</h3>
-              <p className="text-sm text-[#24274A]/75">Review possible conditions, care tips, and next-step recommendations.</p>
-            </div>
-            <span className={`px-4 py-1 rounded-full font-semibold text-sm ${severity_badge[result.severity]}`}>
-              Severity: {result.severity.toUpperCase()}
-            </span>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <section className="rounded-xl border border-[#C9BEFF]/80 bg-white/70 p-4">
-              <h4 className="mb-3 text-base font-semibold text-[#24274A]">Possible Illnesses</h4>
-              <ul className="space-y-2 text-sm">
-                {result.possible_illnesses.length > 0 ? (
-                  result.possible_illnesses.map((illness, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <span className="mr-2 mt-0.5 text-[#6367FF]">•</span>
-                      <span className="text-[#24274A]/85">{illness}</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-[#24274A]/70">No possible illnesses were identified.</li>
-                )}
-              </ul>
-            </section>
-
-            <section className="rounded-xl border border-[#C9BEFF]/80 bg-white/70 p-4">
-              <h4 className="mb-3 text-base font-semibold text-[#24274A]">Care Tips</h4>
-              <ul className="space-y-2 text-sm">
-                {result.tips.length > 0 ? (
-                  result.tips.map((tip, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <span className="mr-2 mt-0.5 text-[#8494FF]">•</span>
-                      <span className="text-[#24274A]/85">{tip}</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-[#24274A]/70">No care tips were returned.</li>
-                )}
-              </ul>
-            </section>
-
-            <section className="rounded-xl border border-[#C9BEFF]/80 bg-white/70 p-4">
-              <h4 className="mb-3 text-base font-semibold text-[#24274A]">Recommendations</h4>
-              <ul className="space-y-2 text-sm">
-                {result.recommendations.length > 0 ? (
-                  result.recommendations.map((rec, idx) => (
-                    <li key={idx} className="flex items-start">
-                      <span className="mr-2 mt-0.5 text-[#6367FF]">•</span>
-                      <span className="text-[#24274A]/85">{rec}</span>
-                    </li>
-                  ))
-                ) : (
-                  <li className="text-[#24274A]/70">No recommendations were returned.</li>
-                )}
-              </ul>
-            </section>
-          </div>
-
-            {result.severity !== 'low' && (
-              <div className="mt-6 border-t border-[#C9BEFF] pt-5">
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
-                  onClick={() => router.push('/appointments')}
-                >
-                  Book Appointment with Veterinarian
-                </Button>
-
-                <div className="mt-4 rounded-xl border border-[#C9BEFF] bg-white/70 p-4">
-                  <h4 className="text-lg font-semibold text-[#191D3A] mb-1">Recommended Veterinarian Contacts</h4>
-                  <p className="text-sm pw-subtext mb-4">
-                    Based on available registered vet clinics. Use contact info to call or send a message for follow-up care.
-                  </p>
-
-                  {loadingVets ? (
-                    <p className="pw-subtext">Loading vet recommendations...</p>
-                  ) : recommendedVets.length === 0 ? (
-                    <p className="pw-subtext">No registered veterinarian details available yet.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {recommendedVets.map((vet) => {
-                        return (
-                          <div key={vet.id} className="rounded-lg border border-[#C9BEFF] bg-[#FFDBFD]/35 p-3">
-                            <p className="font-semibold text-[#191D3A]">{vet.name}</p>
-                            <p className="text-sm pw-subtext">Clinic: {vet.clinicName}</p>
-                            <p className="text-sm pw-subtext">Specialization: {vet.specialization}</p>
-                            <p className="text-sm pw-subtext">Experience: {vet.experienceYears}</p>
-                            <p className="text-sm text-[#32375D] mt-2">Contact: {vet.phone}</p>
-                            <p className="text-sm text-[#32375D]">Email: {vet.email}</p>
-                            <p className="text-sm text-[#32375D]">Address: {vet.clinicAddress}</p>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <a
-                                href={`tel:${vet.phone}`}
-                                className="rounded-md border border-[#8494FF] px-3 py-1 text-sm font-semibold text-[#6367FF]"
-                              >
-                                Call Vet
-                              </a>
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => {
-                                  saveBookingPrefill(vet);
-                                  router.push(
-                                    `/appointments?from=consultation&vetId=${encodeURIComponent(vet.id)}`
-                                  );
-                                }}
-                              >
-                                Book Appointment
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
         </Card>
       )}
     </div>

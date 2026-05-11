@@ -35,12 +35,15 @@ interface ConsultationResult {
 
 interface ConsultationHistoryEntry {
   id: string;
-  createdAt: string;
-  petName: string;
-  petType: 'dog' | 'cat';
-  petAge: number;
+  created_at: string;
+  pet_name: string;
+  pet_type: 'dog' | 'cat';
+  pet_age: number;
   symptoms: string;
-  result: ConsultationResult;
+  possible_illnesses: string[];
+  tips: string[];
+  recommendations: string[];
+  severity: 'low' | 'medium' | 'high';
 }
 
 const CONSULTATION_HISTORY_KEY = 'petwell_consultation_history_v1';
@@ -71,24 +74,44 @@ export default function PetOwnerProfile() {
   const [selectedConsultationId, setSelectedConsultationId] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const rawHistory = window.localStorage.getItem(CONSULTATION_HISTORY_KEY);
-      if (!rawHistory) {
+    const loadConsultationHistory = async () => {
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData.user) {
         return;
       }
 
-      const parsed = JSON.parse(rawHistory) as ConsultationHistoryEntry[];
-      if (!Array.isArray(parsed)) {
+      const { data, error } = await supabase
+        .from('ai_consultations')
+        .select('*')
+        .eq('user_id', authData.user.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) {
+        console.error('Failed to load consultation history:', error);
         return;
       }
 
-      setConsultationHistory(parsed);
-      if (parsed.length > 0) {
-        setSelectedConsultationId(parsed[0].id);
+      const entries: ConsultationHistoryEntry[] = (data || []).map((row: any) => ({
+        id: row.id,
+        created_at: row.created_at,
+        pet_name: row.pet_name,
+        pet_type: row.pet_type,
+        pet_age: row.pet_age,
+        symptoms: row.symptoms,
+        possible_illnesses: row.possible_illnesses,
+        tips: row.tips,
+        recommendations: row.recommendations,
+        severity: row.severity,
+      }));
+
+      setConsultationHistory(entries);
+      if (entries.length > 0) {
+        setSelectedConsultationId(entries[0].id);
       }
-    } catch {
-      window.localStorage.removeItem(CONSULTATION_HISTORY_KEY);
-    }
+    };
+
+    void loadConsultationHistory();
   }, []);
 
   useEffect(() => {
@@ -681,10 +704,10 @@ if (
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="font-semibold text-[#191D3A]">
-                          {entry.petName} ({entry.petType.toUpperCase()})
+                          {entry.pet_name} ({entry.pet_type.toUpperCase()})
                         </p>
                         <p className="text-sm text-[#32375D]">
-                          {new Date(entry.createdAt).toLocaleString()} • Severity: {entry.result.severity.toUpperCase()}
+                          {new Date(entry.created_at).toLocaleString()} • Severity: {entry.severity.toUpperCase()}
                         </p>
                         <p className="mt-1 line-clamp-2 text-sm text-[#24274A]/80">Symptoms: {entry.symptoms}</p>
                       </div>
@@ -698,15 +721,15 @@ if (
                     <div className="border-t border-[#C9BEFF] px-4 pb-4 pt-3">
                       <h4 className="text-xl font-bold text-[#191D3A] mb-1">Analysis Results</h4>
                       <p className="text-sm text-[#32375D] mb-4">
-                        {entry.petName} • {new Date(entry.createdAt).toLocaleString()}
+                        {entry.pet_name} • {new Date(entry.created_at).toLocaleString()}
                       </p>
 
                       <div className="grid gap-4 md:grid-cols-3">
                         <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
                           <h5 className="font-semibold text-[#24274A] mb-2">Possible Illnesses</h5>
                           <ul className="space-y-1 text-sm text-[#24274A]/85">
-                            {entry.result.possible_illnesses.length > 0 ? (
-                              entry.result.possible_illnesses.map((illness, idx) => (
+                            {entry.possible_illnesses.length > 0 ? (
+                              entry.possible_illnesses.map((illness, idx) => (
                                 <li key={idx}>• {illness}</li>
                               ))
                             ) : (
@@ -718,8 +741,8 @@ if (
                         <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
                           <h5 className="font-semibold text-[#24274A] mb-2">Care Tips</h5>
                           <ul className="space-y-1 text-sm text-[#24274A]/85">
-                            {entry.result.tips.length > 0 ? (
-                              entry.result.tips.map((tip, idx) => (
+                            {entry.tips.length > 0 ? (
+                              entry.tips.map((tip, idx) => (
                                 <li key={idx}>• {tip}</li>
                               ))
                             ) : (
@@ -731,8 +754,8 @@ if (
                         <section className="rounded-lg border border-[#C9BEFF]/80 bg-white/80 p-3">
                           <h5 className="font-semibold text-[#24274A] mb-2">Recommendations</h5>
                           <ul className="space-y-1 text-sm text-[#24274A]/85">
-                            {entry.result.recommendations.length > 0 ? (
-                              entry.result.recommendations.map((item, idx) => (
+                            {entry.recommendations.length > 0 ? (
+                              entry.recommendations.map((item, idx) => (
                                 <li key={idx}>• {item}</li>
                               ))
                             ) : (

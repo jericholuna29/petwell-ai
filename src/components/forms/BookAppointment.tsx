@@ -307,6 +307,7 @@ export default function BookAppointment() {
           vet_id: selectedVet,
           appointment_date: appointmentDateTime.toISOString(),
           appointment_type: 'consultation',
+          status: 'confirmed',
           notes: notes.trim() || null,
         },
         ])
@@ -327,7 +328,7 @@ export default function BookAppointment() {
         }
       }
 
-      toast.success('Appointment request sent. Please wait for vet clinic approval.');
+      toast.success('Appointment booked successfully!');
       window.localStorage.removeItem(CONSULTATION_BOOKING_PREFILL_KEY);
       setSelectedVet('');
       setSelectedPet('');
@@ -340,6 +341,30 @@ export default function BookAppointment() {
       toast.error(error?.message || 'Failed to book appointment');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAppointment = async (appointmentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this appointment?')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', appointmentId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast.success('Appointment deleted successfully');
+      if (userId) {
+        await loadOwnerAppointments(userId);
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'Failed to delete appointment');
     }
   };
 
@@ -368,7 +393,7 @@ export default function BookAppointment() {
     <div className="max-w-4xl mx-auto p-4 space-y-6">
       <Card>
         <h2 className="text-3xl font-bold text-[#191D3A] mb-2">Book Appointment</h2>
-        <p className="pw-subtext mb-6">Select your pet, choose a registered veterinarian, and schedule your appointment</p>
+        <p className="pw-subtext mb-6">Select your pet, choose a registered veterinarian, and schedule your appointment instantly</p>
 
         {fromConsultation && consultationPrefill && (
           <div className="mb-6 rounded-lg border border-[#8494FF] bg-[#C9BEFF]/35 p-4">
@@ -524,34 +549,29 @@ export default function BookAppointment() {
 
       <Card>
         <h3 className="text-xl font-bold text-[#191D3A] mb-2">My Appointment Requests</h3>
-        <p className="pw-subtext mb-4">Track clinic approval status for your bookings.</p>
+        <p className="pw-subtext mb-4">View your upcoming appointments.</p>
 
-        {appointments.length === 0 ? (
-          <p className="pw-subtext">No appointment requests yet.</p>
+        {appointments.filter(a => a.status !== 'cancelled').length === 0 ? (
+          <p className="pw-subtext">No upcoming appointments.</p>
         ) : (
           <div className="space-y-3">
-            {appointments.map((appointment) => {
+            {appointments.filter(a => a.status !== 'cancelled').map((appointment) => {
               const vet = vetMap[appointment.vet_id];
               const pet = petMap[appointment.pet_id];
 
               const statusLabel =
-                appointment.status === 'pending'
-                  ? 'Waiting for vet approval'
-                  : appointment.status === 'confirmed'
-                    ? 'Approved by vet clinic'
-                    : appointment.status === 'cancelled'
-                      ? 'Declined by vet clinic'
-                      : appointment.status;
+        appointment.status === 'confirmed'
+          ? 'Approved by vet clinic'
+          : appointment.status === 'cancelled'
+            ? 'Declined by vet clinic'
+            : appointment.status;
 
-              const statusClass =
-                appointment.status === 'pending'
-                  ? 'bg-[#FFF1B8] text-[#7A5A00]'
-                  : appointment.status === 'confirmed'
-                    ? 'bg-[#CFF7DE] text-[#1E6B3A]'
-                    : appointment.status === 'cancelled'
-                      ? 'bg-[#FFD9E4] text-[#8F1F47]'
-                      : 'bg-[#C9BEFF] text-[#24274A]';
-
+      const statusClass =
+        appointment.status === 'confirmed'
+          ? 'bg-[#CFF7DE] text-[#1E6B3A]'
+          : appointment.status === 'cancelled'
+            ? 'bg-[#FFD9E4] text-[#8F1F47]'
+            : 'bg-[#C9BEFF] text-[#24274A]';
               return (
                 <div key={appointment.id} className="rounded-xl border border-[#C9BEFF] bg-white/80 p-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -568,9 +588,17 @@ export default function BookAppointment() {
                         {appointment.appointment_type ? ` | Type: ${appointment.appointment_type}` : ''}
                       </p>
                     </div>
-                    <span className={`self-start rounded-full px-3 py-1 text-sm font-semibold ${statusClass}`}>
-                      {statusLabel}
-                    </span>
+                    <div className="flex flex-col items-start gap-2">
+                      <span className={`self-start rounded-full px-3 py-1 text-sm font-semibold ${statusClass}`}>
+                        {statusLabel}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteAppointment(appointment.id)}
+                        className="text-xs font-semibold text-red-600 hover:text-red-800 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
 
                   <AppointmentMessageThread
