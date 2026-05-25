@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
+import { List } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 
@@ -195,7 +196,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
             <button
               type="button"
-              className="relative md:hidden inline-flex h-11 w-11 items-center justify-center rounded-xl border border-[#C9BEFF] bg-white/85 text-[#24274A] transition-all duration-200 hover:bg-[#FFDBFD]"
+              className="relative md:hidden inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#2F80ED] bg-white text-[#2F80ED] shadow-[0_8px_20px_rgba(47,128,237,0.12)] transition-all duration-200 hover:bg-[#F4F9FF]"
               onClick={() => setMobileMenuOpen((open) => !open)}
               aria-expanded={mobileMenuOpen}
               aria-label={mobileMenuOpen ? 'Close dashboard navigation' : 'Open dashboard navigation'}
@@ -206,23 +207,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
                   {unreadNotifications > 99 ? '99+' : unreadNotifications}
                 </span>
               )}
-              <span className="flex h-4 w-5 flex-col justify-between">
-                <span
-                  className={`h-0.5 w-5 rounded-full bg-current transition-all duration-200 ${
-                    mobileMenuOpen ? 'translate-y-[7px] rotate-45' : ''
-                  }`}
-                />
-                <span
-                  className={`h-0.5 w-5 rounded-full bg-current transition-all duration-200 ${
-                    mobileMenuOpen ? 'opacity-0' : 'opacity-100'
-                  }`}
-                />
-                <span
-                  className={`h-0.5 w-5 rounded-full bg-current transition-all duration-200 ${
-                    mobileMenuOpen ? '-translate-y-[7px] -rotate-45' : ''
-                  }`}
-                />
-              </span>
+              <List
+                size={24}
+                className={`transition-transform duration-200 ${mobileMenuOpen ? 'rotate-90' : ''}`}
+                aria-hidden="true"
+              />
             </button>
           </div>
 

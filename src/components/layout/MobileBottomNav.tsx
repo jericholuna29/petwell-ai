@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChatDots, Person, Envelope, Bell, Calendar, House } from 'react-bootstrap-icons';
+import { MessageSquare, User, Mail, Bell, Calendar, Home } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
 type UserRole = 'pet_owner' | 'vet' | null;
@@ -129,21 +129,21 @@ export default function MobileBottomNav() {
     {
       label: 'Profile',
       href: '/profile',
-      icon: Person,
+      icon: User,
       color: '#8494FF',
       badge: false,
     },
     {
       label: 'Messages',
       href: '/messages',
-      icon: Envelope,
+      icon: Mail,
       color: '#A8B5FF',
       badge: unreadMessages > 0,
     },
     {
       label: 'Consultation',
       href: '/consultation',
-      icon: ChatDots,
+      icon: MessageSquare,
       color: '#6367FF',
       badge: false,
     },
@@ -168,7 +168,7 @@ export default function MobileBottomNav() {
     {
       label: 'Dashboard',
       href: '/dashboard',
-      icon: House,
+      icon: Home,
       color: '#8494FF',
       badge: false,
     },
@@ -182,7 +182,7 @@ export default function MobileBottomNav() {
     {
       label: 'Messages',
       href: '/messages',
-      icon: Envelope,
+      icon: Mail,
       color: '#6367FF',
       badge: unreadMessages > 0,
     },
@@ -196,7 +196,7 @@ export default function MobileBottomNav() {
     {
       label: 'Profile',
       href: '/profile',
-      icon: Person,
+      icon: User,
       color: '#FFDBFD',
       badge: false,
     },
@@ -208,7 +208,12 @@ export default function MobileBottomNav() {
     return pathname === href || pathname.startsWith(href + '/');
   };
 
-  if (!mounted) return null;
+  const PUBLIC_PATHS = ['/', '/auth/login', '/auth/register'];
+
+  const isPublicPage = PUBLIC_PATHS.includes(pathname);
+
+  if (!mounted || isPublicPage || !userId) return null;
+
 
   return (
     <>

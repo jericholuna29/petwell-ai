@@ -168,19 +168,39 @@ export default function VetProfile() {
       }
     }
 
-    const { error: updateVetError } = await supabase
+    // Save vets record with fallback strategies for RLS/permission issues
+    const vetData = {
+      id: authData.user.id,
+      specialization: profile.specializations.trim() || null,
+      experience_years: parsedExperience,
+      clinic_name: profile.clinic.trim() || null,
+      clinic_address: profile.address.trim() || null,
+      license_number: profile.licenseNumber.trim() || null,
+    };
+
+    // Try upsert first
+    let { error: updateVetError } = await supabase
       .from('vets')
-      .upsert(
-        {
-          id: authData.user.id,
-          specialization: profile.specializations.trim() || null,
-          experience_years: parsedExperience,
-          clinic_name: profile.clinic.trim() || null,
-          clinic_address: profile.address.trim() || null,
-          license_number: profile.licenseNumber.trim() || null,
-        },
-        { onConflict: 'id' }
-      );
+      .upsert([vetData], { onConflict: 'id' });
+
+    // If upsert fails, try insert (row may not exist yet)
+    if (updateVetError) {
+      const { error: insertError } = await supabase
+        .from('vets')
+        .insert([vetData]);
+      
+      // If insert fails (row already exists), try update
+      if (insertError) {
+        const { error: updateError } = await supabase
+          .from('vets')
+          .update(vetData)
+          .eq('id', authData.user.id);
+        
+        updateVetError = updateError;
+      } else {
+        updateVetError = null; // Insert succeeded
+      }
+    }
 
     if (updateVetError) {
       toast.error(updateVetError.message || 'Failed to update veterinarian details');
@@ -200,163 +220,155 @@ export default function VetProfile() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-6">
-      <Card>
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-3xl font-bold text-[#191D3A]">Veterinarian Profile</h2>
-          <Button
-            variant={isEditing ? 'secondary' : 'primary'}
-            onClick={() => setIsEditing(!isEditing)}
-          >
-            {isEditing ? 'Cancel' : 'Edit'}
-          </Button>
-        </div>
-
-        <div className="space-y-4">
-          {loading ? (
-            <p className="pw-subtext">Loading veterinarian profile...</p>
-          ) : (
-            <>
-          <div className="flex items-center mb-6">
-            {profilePhoto ? (
-              <img
-                src={profilePhoto}
-                alt="Profile"
-                className="w-20 h-20 rounded-full object-cover border border-[#C9BEFF]"
-              />
-            ) : (
-              <div className="w-20 h-20 bg-gradient-to-br from-[#8494FF] to-[#6367FF] rounded-full flex items-center justify-center text-white text-lg font-bold">
-                {profile.fullName.trim() ? profile.fullName.trim().slice(0, 2).toUpperCase() : 'VT'}
-              </div>
-            )}
-            <div className="ml-6">
-              <h3 className="text-2xl font-bold text-[#191D3A]">{profile.fullName}</h3>
-              <p className="pw-subtext">{profile.clinic}</p>
-              <div className="flex items-center mt-2">
-                <span className="text-[#6367FF]">★★★★★</span>
-                <span className="pw-subtext text-sm ml-2">Vet Clinic Profile</span>
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 lg:px-8 space-y-6">
+      <Card className="border-[#D7D0FF] bg-gradient-to-br from-white via-white to-[#F7F4FF]">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="flex h-24 w-24 flex-shrink-0 items-center justify-center">
+              {profilePhoto ? (
+                <img
+                  src={profilePhoto}
+                  alt="Profile"
+                  className="h-24 w-24 rounded-3xl object-cover border border-[#C9BEFF] shadow-[0_10px_24px_rgba(99,103,255,0.12)]"
+                />
+              ) : (
+                <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-gradient-to-br from-[#8494FF] to-[#6367FF] text-2xl font-bold text-white shadow-[0_10px_24px_rgba(99,103,255,0.22)]">
+                  {profile.fullName.trim() ? profile.fullName.trim().slice(0, 2).toUpperCase() : 'VT'}
+                </div>
+              )}
+            </div>
+            <div>
+              <p className="pw-chip mb-2 uppercase tracking-[0.18em]">Veterinarian Profile</p>
+              <h2 className="text-3xl font-bold text-[#191D3A] md:text-4xl">
+                {profile.fullName || 'Veterinarian Profile'}
+              </h2>
+              <p className="pw-subtext mt-2 max-w-2xl text-sm md:text-base">
+                Present your clinic details, specialty, and professional credentials in a clean responsive layout.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[#5E6288]">
+                <span className="font-semibold text-[#6367FF]">★★★★★</span>
+                <span>{profile.clinic || 'Clinic profile'}</span>
               </div>
             </div>
           </div>
 
-          {isEditing ? (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-[#32375D] mb-2">
-                  Profile Picture
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  className="w-full px-3 py-2 border border-[#C9BEFF] rounded-lg bg-white"
-                />
-              </div>
-              <Input
-                label="Full Name"
-                value={profile.fullName}
-                onChange={(e) =>
-                  setProfile({ ...profile, fullName: e.target.value })
-                }
+          <Button
+            variant={isEditing ? 'secondary' : 'primary'}
+            className="w-full lg:w-auto"
+            onClick={() => setIsEditing(!isEditing)}
+          >
+            {isEditing ? 'Cancel editing' : 'Edit profile'}
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="border-[#D7D0FF] bg-white/90">
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-2xl font-bold text-[#191D3A]">Professional Details</h3>
+            <p className="pw-subtext text-sm">A concise, mobile-friendly overview of your practice information.</p>
+          </div>
+        </div>
+
+        {loading ? (
+          <p className="pw-subtext">Loading veterinarian profile...</p>
+        ) : isEditing ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-2 block text-sm font-medium text-[#32375D]">Profile Picture</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                className="w-full rounded-xl border border-[#C9BEFF] bg-white px-3 py-2"
               />
-              <Input
-                label="Email"
-                type="email"
-                value={profile.email}
-                onChange={() => undefined}
-                disabled
-              />
-              <Input
-                label="Phone"
-                value={profile.phone}
-                onChange={(e) =>
-                  setProfile({ ...profile, phone: e.target.value })
-                }
-              />
-              <Input
-                label="Clinic Name"
-                value={profile.clinic}
-                onChange={(e) =>
-                  setProfile({ ...profile, clinic: e.target.value })
-                }
-              />
-              <Input
-                label="Specializations"
-                value={profile.specializations}
-                onChange={(e) =>
-                  setProfile({ ...profile, specializations: e.target.value })
-                }
-              />
-              <Input
-                label="License Number"
-                value={profile.licenseNumber}
-                onChange={(e) =>
-                  setProfile({ ...profile, licenseNumber: e.target.value })
-                }
-              />
-              <Input
-                label="Years of Experience"
-                type="number"
-                value={profile.experience}
-                onChange={(e) =>
-                  setProfile({ ...profile, experience: e.target.value })
-                }
-              />
-              <Input
-                label="Address"
-                value={profile.address}
-                onChange={(e) =>
-                  setProfile({ ...profile, address: e.target.value })
-                }
-              />
+            </div>
+            <Input
+              label="Full Name"
+              value={profile.fullName}
+              onChange={(e) => setProfile({ ...profile, fullName: e.target.value })}
+            />
+            <Input
+              label="Email"
+              type="email"
+              value={profile.email}
+              onChange={() => undefined}
+              disabled
+            />
+            <Input
+              label="Phone"
+              value={profile.phone}
+              onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+            />
+            <Input
+              label="Clinic Name"
+              value={profile.clinic}
+              onChange={(e) => setProfile({ ...profile, clinic: e.target.value })}
+            />
+            <Input
+              label="Specializations"
+              value={profile.specializations}
+              onChange={(e) => setProfile({ ...profile, specializations: e.target.value })}
+            />
+            <Input
+              label="License Number"
+              value={profile.licenseNumber}
+              onChange={(e) => setProfile({ ...profile, licenseNumber: e.target.value })}
+            />
+            <Input
+              label="Years of Experience"
+              type="number"
+              value={profile.experience}
+              onChange={(e) => setProfile({ ...profile, experience: e.target.value })}
+            />
+            <Input
+              label="Address"
+              value={profile.address}
+              onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+            />
+            <div className="md:col-span-2">
               <Button
                 variant="primary"
-                className="w-full"
+                className="w-full sm:w-auto"
                 loading={saving}
                 onClick={handleSave}
               >
                 Save Changes
               </Button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <p className="text-sm pw-subtext">Phone</p>
-                <p className="text-lg font-semibold text-[#191D3A]">
-                  {profile.phone}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm pw-subtext">Consultation Fee</p>
-                <p className="text-lg font-semibold text-[#191D3A]">
-                  Not provided
-                </p>
-              </div>
-              <div>
-                <p className="text-sm pw-subtext">Years of Experience</p>
-                <p className="text-lg font-semibold text-[#191D3A]">
-                  {profile.experience ? `${profile.experience} years` : 'Not provided'}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm pw-subtext">Specializations</p>
-                <p className="text-lg font-semibold text-[#191D3A]">
-                  {profile.specializations || 'Not provided'}
-                </p>
-              </div>
-              <div className="md:col-span-2">
-                <p className="text-sm pw-subtext">Clinic Address</p>
-                <p className="text-lg text-[#191D3A]">{profile.address || 'Not provided'}</p>
-              </div>
-              <div className="md:col-span-2">
-                <p className="text-sm pw-subtext">License Number</p>
-                <p className="text-lg text-[#191D3A]">{profile.licenseNumber || 'Not provided'}</p>
-              </div>
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div>
+              <p className="text-sm pw-subtext">Phone</p>
+              <p className="mt-1 text-base font-semibold text-[#191D3A] md:text-lg">{profile.phone || 'Not provided'}</p>
             </div>
-          )}
-            </>
-          )}
-        </div>
+            <div>
+              <p className="text-sm pw-subtext">Consultation Fee</p>
+              <p className="mt-1 text-base font-semibold text-[#191D3A] md:text-lg">Not provided</p>
+            </div>
+            <div>
+              <p className="text-sm pw-subtext">Years of Experience</p>
+              <p className="mt-1 text-base font-semibold text-[#191D3A] md:text-lg">
+                {profile.experience ? `${profile.experience} years` : 'Not provided'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm pw-subtext">Specializations</p>
+              <p className="mt-1 text-base font-semibold text-[#191D3A] md:text-lg">
+                {profile.specializations || 'Not provided'}
+              </p>
+            </div>
+            <div className="sm:col-span-2 xl:col-span-3">
+              <p className="text-sm pw-subtext">Clinic Address</p>
+              <p className="mt-1 text-base text-[#191D3A] md:text-lg">{profile.address || 'Not provided'}</p>
+            </div>
+            <div className="sm:col-span-2 xl:col-span-3">
+              <p className="text-sm pw-subtext">License Number</p>
+              <p className="mt-1 text-base text-[#191D3A] md:text-lg">{profile.licenseNumber || 'Not provided'}</p>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );

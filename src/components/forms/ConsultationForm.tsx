@@ -95,7 +95,6 @@ export default function ConsultationForm() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ConsultationResponse | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [consultationHistory, setConsultationHistory] = useState<ConsultationHistoryEntry[]>([]);
 
   useEffect(() => {
     const loadPets = async () => {
@@ -155,54 +154,7 @@ export default function ConsultationForm() {
     }
   }, [selectedPetId, petOptions]);
 
-  useEffect(() => {
-    const loadConsultationHistory = async () => {
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData.user) {
-        return;
-      }
 
-      const { data, error } = await supabase
-        .from('ai_consultations')
-        .select('*')
-        .eq('user_id', authData.user.id)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      if (error) {
-        console.error('Failed to load consultation history:', error);
-        return;
-      }
-
-      if (!data || data.length === 0) return;
-
-      const entries: ConsultationHistoryEntry[] = data.map((row: any) => ({
-        id: row.id,
-        createdAt: row.created_at,
-        petName: row.pet_name,
-        petType: row.pet_type as 'dog' | 'cat',
-        petAge: row.pet_age,
-        symptoms: row.symptoms,
-        result: {
-          possible_illnesses: row.possible_illnesses,
-          tips: row.tips,
-          recommendations: row.recommendations,
-          severity: row.severity,
-        },
-      }));
-
-      setConsultationHistory(entries);
-
-      const latest = entries[0];
-      setPetName(latest.petName);
-      setPetType(latest.petType);
-      setPetAge(String(latest.petAge));
-      setSymptoms(latest.symptoms);
-      setResult(latest.result);
-    };
-
-    void loadConsultationHistory();
-  }, []);
 
   const handleSymptomChange = (value: string) => {
     setSymptoms(value);
@@ -260,41 +212,7 @@ export default function ConsultationForm() {
     if (error) {
       console.error('Failed to save consultation:', error);
       toast.error('Failed to save consultation to database');
-      return;
     }
-
-    setConsultationHistory([entry, ...consultationHistory]);
-  };
-
-  const loadHistoryEntry = (entry: ConsultationHistoryEntry) => {
-    setPetName(entry.petName);
-    setPetType(entry.petType);
-    setPetAge(String(entry.petAge));
-    setSymptoms(entry.symptoms);
-    setResult(entry.result);
-    setErrors({});
-  };
-
-  const clearHistory = async () => {
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
-      toast.error('Not authenticated');
-      return;
-    }
-
-    const { error } = await supabase
-      .from('ai_consultations')
-      .delete()
-      .eq('user_id', authData.user.id);
-
-    if (error) {
-      toast.error('Failed to clear consultation history');
-      return;
-    }
-
-    setConsultationHistory([]);
-    setResult(null);
-    toast.success('Consultation history cleared.');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -307,9 +225,15 @@ export default function ConsultationForm() {
       const normalizedSymptoms = symptoms.trim();
       const parsedPetAge = Number(petAge);
 
-      const response = await fetch('/api/consultation', {
+      const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/consultation`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        },
         body: JSON.stringify({
           petType,
           petAge: parsedPetAge,
@@ -317,12 +241,12 @@ export default function ConsultationForm() {
         }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        throw new Error(errorData?.error || `Consultation failed (${response.status})`);
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error((errBody as any).error || 'Consultation failed');
       }
 
-      const data = await response.json();
+      const data = await res.json();
 
       const nextHistory: ConsultationHistoryEntry = {
         id: `${Date.now()}`,
@@ -494,43 +418,7 @@ export default function ConsultationForm() {
         </form>
       </Card>
 
-      {consultationHistory.length > 0 && (
-        <Card className="mb-6 border border-[#C9BEFF]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-lg font-bold text-[#191D3A]">Previous Consultations</h3>
-              <p className="text-sm text-[#24274A]/75">Your recent AI consultation results are saved on this device.</p>
-            </div>
-            <Button variant="secondary" size="sm" onClick={clearHistory}>
-              Clear History
-            </Button>
-          </div>
 
-          <div className="space-y-2">
-            {consultationHistory.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() =>
-                  router.push(
-                    `/profile?section=recent-consultations&consultationId=${encodeURIComponent(entry.id)}`
-                  )
-                }
-                className="w-full rounded-lg border border-[#C9BEFF] bg-white/70 px-4 py-3 text-left transition hover:border-[#8494FF]"
-              >
-                <p className="font-semibold text-[#191D3A]">
-                  {entry.petName} ({entry.petType.toUpperCase()})
-                </p>
-                <p className="text-sm text-[#32375D]">
-                  {new Date(entry.createdAt).toLocaleString()} • Severity: {entry.result.severity.toUpperCase()}
-                </p>
-                <p className="mt-1 line-clamp-2 text-sm text-[#24274A]/80">Symptoms: {entry.symptoms}</p>
-                <p className="mt-2 text-xs font-semibold text-[#6367FF]">Open in Profile Recent Consultations</p>
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
 }

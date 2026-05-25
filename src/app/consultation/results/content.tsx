@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { ArrowLeft, CheckCircleFill } from 'react-bootstrap-icons';
+import { ArrowLeft, ChevronDown, Mail, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
 
@@ -33,7 +33,7 @@ export default function ConsultationResultsContent() {
   const searchParams = useSearchParams();
   const [result, setResult] = useState<ConsultationResult | null>(null);
   const [vets, setVets] = useState<Vet[]>([]);
-  const [selectedVetId, setSelectedVetId] = useState<string | null>(null);
+  const [selectedVetId, setSelectedVetId] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [loadingVets, setLoadingVets] = useState(true);
 
@@ -57,34 +57,48 @@ export default function ConsultationResultsContent() {
     }
   }, [searchParams, router]);
 
-  // Fetch recommended vets
+  // Fetch available vets using the correct `vets` + `profiles` tables
   useEffect(() => {
     const fetchVets = async () => {
       try {
-        const { data, error } = await supabase
-          .from('vet_details')
-          .select(`
-            vets:profiles(id, full_name, email, phone),
-            clinic_name,
-            specialization
-          `)
-          .limit(3);
+        // Step 1: get vet profile ids + clinic details from the `vets` table
+        const { data: vetDetails, error: vetDetailsError } = await supabase
+          .from('vets')
+          .select('id, clinic_name, specialization')
+          .limit(10);
 
-        if (error) throw error;
+        if (vetDetailsError) throw vetDetailsError;
+        if (!vetDetails || vetDetails.length === 0) {
+          setVets([]);
+          setLoadingVets(false);
+          return;
+        }
 
-        const formattedVets: Vet[] = (data || []).map((vet: any) => ({
-          id: vet.vets?.id || '',
-          full_name: vet.vets?.full_name || 'Unnamed Vet',
-          email: vet.vets?.email || '',
-          phone: vet.vets?.phone || 'N/A',
-          clinic_name: vet.clinic_name || 'Clinic',
-          specialization: vet.specialization || 'General Practice',
-        }));
+        const vetIds = vetDetails.map((v) => v.id);
+
+        // Step 2: fetch profile info for those vet ids
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, full_name, email, phone')
+          .in('id', vetIds);
+
+        if (profilesError) throw profilesError;
+
+        const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
+
+        const formattedVets: Vet[] = vetDetails.map((vet) => {
+          const profile = profileMap.get(vet.id);
+          return {
+            id: vet.id,
+            full_name: profile?.full_name || 'Unnamed Vet',
+            email: profile?.email || '',
+            phone: profile?.phone || 'N/A',
+            clinic_name: vet.clinic_name || 'Clinic',
+            specialization: vet.specialization || 'General Practice',
+          };
+        });
 
         setVets(formattedVets);
-        if (formattedVets.length > 0) {
-          setSelectedVetId(formattedVets[0].id);
-        }
       } catch (error) {
         console.error('Error fetching vets:', error);
       } finally {
@@ -94,32 +108,6 @@ export default function ConsultationResultsContent() {
 
     fetchVets();
   }, []);
-
-  const handleBookAppointment = async () => {
-    if (!selectedVetId || !result) {
-      toast.error('Please select a vet first');
-      return;
-    }
-
-    try {
-      // Store the selected vet in session/context for the booking page
-      sessionStorage.setItem(
-        'appointmentPrefill',
-        JSON.stringify({
-          vetId: selectedVetId,
-          vetName: vets.find(v => v.id === selectedVetId)?.full_name,
-          symptoms: result.symptoms,
-          petName: result.petName,
-          severity: result.severity,
-        })
-      );
-
-      router.push('/appointments');
-    } catch (error) {
-      console.error('Error preparing appointment:', error);
-      toast.error('Failed to prepare appointment');
-    }
-  };
 
   if (loading) {
     return (
@@ -141,6 +129,8 @@ export default function ConsultationResultsContent() {
 
   const severity = result.severity || 'medium';
   const colors = severityColors[severity];
+
+  const selectedVet = vets.find((v) => v.id === selectedVetId);
 
   return (
     <div className="min-h-screen bg-white pb-24">
@@ -254,66 +244,68 @@ export default function ConsultationResultsContent() {
           </div>
         </Card>
 
-        {/* Vet Recommendations */}
-        {!loadingVets && vets.length > 0 && (
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100/50 border border-blue-200">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-1 h-6 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full" />
-              <h3 className="text-xl font-bold text-[#191D3A]">Recommended Vets</h3>
-              <span className="ml-auto text-xs font-semibold text-blue-700 bg-blue-100 px-2 py-1 rounded">
-                Select one to book
-              </span>
+        {/* Vet Dropdown Recommendation */}
+        <Card className="bg-gradient-to-br from-[#F5F3FF] to-white border border-[#C9BEFF]/60">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-1 h-6 bg-gradient-to-b from-[#6367FF] to-[#8494FF] rounded-full" />
+            <h3 className="text-xl font-bold text-[#191D3A]">Recommended Veterinarian</h3>
+          </div>
+
+          {loadingVets ? (
+            <p className="text-sm text-[#5E6288]">Loading available vets...</p>
+          ) : vets.length === 0 ? (
+            <p className="text-sm text-[#5E6288]">No registered veterinarians found.</p>
+          ) : (
+            <div className="space-y-4">
+              {/* Dropdown selector */}
+              <div className="relative">
+                <label className="block text-sm font-medium text-[#32375D] mb-2">
+                  Select a vet to book with
+                </label>
+                <div className="relative">
+                  <select
+                    value={selectedVetId}
+                    onChange={(e) => setSelectedVetId(e.target.value)}
+                    className="w-full appearance-none px-4 py-3 pr-10 border border-[#C9BEFF] rounded-xl bg-white text-[#191D3A] font-medium focus:outline-none focus:ring-2 focus:ring-[#8494FF]/50 focus:border-[#8494FF] transition cursor-pointer"
+                  >
+                    <option value="">Choose vet clinic</option>
+                    {vets.map((vet) => (
+                      <option key={vet.id} value={vet.id}>
+                        {vet.full_name} — {vet.clinic_name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8494FF] pointer-events-none" />
+                </div>
+              </div>
+
+              {/* Selected vet details */}
+              {selectedVet && (
+                <div className="rounded-xl border border-[#C9BEFF]/60 bg-white/80 p-4 space-y-1">
+                  <p className="font-semibold text-[#191D3A]">{selectedVet.full_name}</p>
+                  <p className="text-sm text-[#5E6288]">{selectedVet.clinic_name} · {selectedVet.specialization}</p>
+                  <p className="text-xs text-[#5E6288] flex items-center gap-1.5"><Mail size={13} className="text-[#8494FF]" /> {selectedVet.email}</p>
+                  {selectedVet.phone && <p className="text-xs text-[#5E6288] flex items-center gap-1.5"><Phone size={13} className="text-[#8494FF]" /> {selectedVet.phone}</p>}
+                </div>
+              )}
             </div>
-            <div className="grid gap-3">
-              {vets.map((vet) => (
-                <button
-                  key={vet.id}
-                  onClick={() => setSelectedVetId(vet.id)}
-                  className={`p-4 rounded-lg border-2 transition-all text-left ${
-                    selectedVetId === vet.id
-                      ? 'border-blue-500 bg-white shadow-md'
-                      : 'border-blue-200 bg-white/70 hover:bg-white hover:border-blue-300'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-bold text-[#191D3A]">{vet.full_name}</h4>
-                        {selectedVetId === vet.id && (
-                          <CheckCircleFill size={18} className="text-blue-500" />
-                        )}
-                      </div>
-                      <p className="text-sm text-[#32375D] mb-2">
-                        <span className="font-semibold">{vet.clinic_name}</span>
-                        {vet.specialization && ` • ${vet.specialization}`}
-                      </p>
-                      <div className="flex flex-col gap-1 text-xs text-[#32375D]">
-                        <p>📧 {vet.email}</p>
-                        {vet.phone && <p>📞 {vet.phone}</p>}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </Card>
-        )}
+          )}
+        </Card>
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
           <Link href="/consultation">
             <Button variant="secondary" className="w-full">
               New Consultation
             </Button>
           </Link>
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleBookAppointment}
-            disabled={!selectedVetId}
+          <Link
+            href={selectedVetId ? `/appointments?vetId=${selectedVetId}&from=consultation` : '/appointments'}
           >
-            Book with {selectedVetId ? vets.find(v => v.id === selectedVetId)?.full_name : 'Selected Vet'}
-          </Button>
+            <Button variant="primary" className="w-full" disabled={!selectedVetId}>
+              Book Appointment
+            </Button>
+          </Link>
         </div>
       </div>
     </div>

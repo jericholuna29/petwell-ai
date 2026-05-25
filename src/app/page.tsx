@@ -62,14 +62,6 @@ export default function HomePage() {
               faster appointment coordination, and clear consultation records in one modern workspace.
             </p>
 
-            <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-              <Link href="/consultation">
-                <Button variant="primary" size="lg" className="w-full sm:w-auto">Start Consultation</Button>
-              </Link>
-              <Link href="/appointments">
-                <Button variant="secondary" size="lg" className="w-full sm:w-auto">Book Appointment</Button>
-              </Link>
-            </div>
           </Card>
 
           <Card className="p-7 md:p-8 bg-gradient-to-br from-[#C9BEFF]/65 to-white/85 border-[#8494FF]/40">
