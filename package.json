@@ -1,0 +1,10 @@
+{
+  "name": "app-root",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix petwell-ai run dev",
+    "build": "npm --prefix petwell-ai run build",
+    "start": "npm --prefix petwell-ai run start",
+    "lint": "npm --prefix petwell-ai run lint"
+  }
+}
